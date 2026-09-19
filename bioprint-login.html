@@ -1,0 +1,967 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BioPrint: behavioral login demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #eef1f5;
+    --card: #ffffff;
+    --ink: #14213d;
+    --muted: #5b667a;
+    --line: #d3dae4;
+    --tab-bg: #e1e7ef;
+    --accent: #1a7f68;
+    --accent-ink: #ffffff;
+    --warn: #b4471a;
+    --focus: #2b6cb0;
+    --panel: #0f1a26;
+    --panel-ink: #dbe6f2;
+    --panel-muted: #8b9bb0;
+    --panel-line: #22344a;
+    --trace: #5fe0c0;
+    --font: "Bricolage Grotesque", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0b121a;
+      --card: #131d29;
+      --ink: #e7eef7;
+      --muted: #93a1b5;
+      --line: #263548;
+      --tab-bg: #1a2635;
+      --accent: #4cc9a6;
+      --accent-ink: #06231b;
+      --warn: #f0925f;
+      --focus: #7db3ff;
+      --panel: #101b28;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 400 16px/1.5 var(--font);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    display: grid;
+    grid-template-columns: minmax(340px, 5fr) minmax(0, 6fr);
+    min-height: 100dvh;
+  }
+
+  /* ---------- Login side ---------- */
+  .auth {
+    display: grid;
+    place-items: center;
+    padding: clamp(24px, 6vw, 72px);
+  }
+  .auth-inner { width: 100%; max-width: 392px; }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 40px;
+    font-size: 1.125rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .brand svg { width: 28px; height: 28px; color: var(--accent); }
+
+  .tabs {
+    display: inline-grid;
+    grid-auto-flow: column;
+    gap: 2px;
+    padding: 3px;
+    margin-bottom: 28px;
+    background: var(--tab-bg);
+    border-radius: 10px;
+  }
+  .tabs button {
+    padding: 7px 18px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    font: 500 0.9375rem var(--font);
+    cursor: pointer;
+  }
+  .tabs button[aria-selected="true"] {
+    background: var(--card);
+    color: var(--ink);
+    box-shadow: 0 1px 2px rgba(20, 33, 61, 0.14);
+  }
+  .tabs button:focus-visible, .ghost:focus-visible, .primary:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--focus) 55%, transparent);
+    outline-offset: 2px;
+  }
+
+  h1 {
+    margin: 0 0 12px;
+    font-size: clamp(1.75rem, 3.2vw, 2.25rem);
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.025em;
+  }
+  .lede { margin: 0 0 28px; max-width: 44ch; color: var(--muted); }
+
+  .field { margin-bottom: 18px; }
+  label { display: block; margin-bottom: 6px; font-size: 0.9375rem; font-weight: 500; }
+  input {
+    width: 100%;
+    height: 46px;
+    padding: 0 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    transition: border-color 0.12s, box-shadow 0.12s;
+  }
+  input:focus-visible {
+    outline: none;
+    border-color: var(--focus);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 28%, transparent);
+  }
+
+  .dots { display: flex; gap: 6px; margin: 4px 0 14px; }
+  .dots i { width: 24px; height: 4px; border-radius: 2px; background: var(--line); }
+  .dots i.on { background: var(--accent); }
+  .dots[hidden] { display: none; }
+
+  .primary {
+    width: 100%;
+    height: 48px;
+    margin-top: 6px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font: 600 1rem var(--font);
+    cursor: pointer;
+  }
+  .primary:hover { filter: brightness(1.07); }
+  .primary:active { transform: translateY(1px); }
+
+  .status { min-height: 3.2em; margin: 14px 0 0; font-size: 0.9375rem; color: var(--muted); }
+  .status[data-tone="error"] { color: var(--warn); }
+  .status[data-tone="ok"] { color: var(--accent); }
+
+  /* ---------- Inspector side ---------- */
+  .inspector {
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+    height: 100dvh;
+    padding: clamp(20px, 3vw, 36px);
+    background: var(--panel);
+    border-left: 1px solid var(--panel-line);
+    color: var(--panel-ink);
+  }
+  .inspector h2 { margin: 0; font-size: 1.125rem; font-weight: 600; }
+  .inspector p { margin: 4px 0 0; max-width: 64ch; color: var(--panel-muted); font-size: 0.875rem; }
+
+  .trace {
+    flex: none;
+    width: 100%;
+    height: 112px;
+    border: 1px solid var(--panel-line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    color: var(--trace);
+  }
+
+  .hud {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+    gap: 12px;
+    margin: 0;
+  }
+  .hud dt { color: var(--panel-muted); font-size: 0.8125rem; }
+  .hud dd { margin: 0; font-size: 1.375rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .out-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--panel-muted);
+    font-size: 0.8125rem;
+  }
+  .actions { display: flex; gap: 8px; }
+  .ghost {
+    padding: 6px 11px;
+    border: 1px solid var(--panel-line);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--panel-ink);
+    font: 500 0.8125rem var(--font);
+    cursor: pointer;
+  }
+  .ghost:hover:not(:disabled) { border-color: var(--panel-muted); }
+  .ghost:disabled { opacity: 0.4; cursor: default; }
+
+  #out {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    padding: 14px;
+    overflow: auto;
+    border: 1px solid var(--panel-line);
+    border-radius: 8px;
+    background: #070d14;
+    color: #c9d6e6;
+    font: 12px/1.55 var(--mono);
+    white-space: pre;
+    tab-size: 2;
+  }
+  #out:focus-visible { outline: 2px solid var(--trace); outline-offset: 2px; }
+
+  @media (max-width: 860px) {
+    .shell { grid-template-columns: 1fr; }
+    .inspector { position: static; height: auto; border-left: 0; border-top: 1px solid var(--panel-line); }
+    #out { min-height: 260px; max-height: 70vh; flex: none; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <main class="auth">
+    <div class="auth-inner">
+      <div class="brand">
+        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="M16 4C9.4 4 4 9.4 4 16"/>
+          <path d="M16 4c6.6 0 12 5.4 12 12v3"/>
+          <path d="M16 9c-3.9 0-7 3.1-7 7 0 3 .6 5.6 1.6 8"/>
+          <path d="M16 9c3.9 0 7 3.1 7 7 0 2.4-.3 4.6-.9 6.5"/>
+          <path d="M16 14c-1.1 0-2 .9-2 2 0 3 .5 5.9 1.5 8.5"/>
+          <path d="M16 14c1.1 0 2 .9 2 2 0 2.3-.2 4.4-.6 6.4"/>
+        </svg>
+        BioPrint
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Choose an action">
+        <button type="button" role="tab" id="tab-enroll" aria-selected="true" aria-controls="panel">Enroll</button>
+        <button type="button" role="tab" id="tab-login" aria-selected="false" aria-controls="panel">Sign in</button>
+      </div>
+
+      <div id="panel" role="tabpanel">
+        <h1 id="title"></h1>
+        <p class="lede" id="lede"></p>
+
+        <form id="form" novalidate>
+          <div class="field">
+            <label for="username">Username</label>
+            <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false">
+          </div>
+          <div class="field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="new-password">
+          </div>
+          <div class="dots" id="dots" role="img"></div>
+          <button class="primary" id="submit" type="submit"></button>
+          <p class="status" id="status" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <aside class="inspector" aria-label="Telemetry inspector">
+    <header>
+      <h2>Telemetry inspector</h2>
+      <p>Demo view. The payload below is exactly what this page would send to the fingerprinting engine. Your password's characters are never captured, only timing.</p>
+    </header>
+
+    <canvas class="trace" id="trace" aria-hidden="true"></canvas>
+
+    <dl class="hud">
+      <div><dt>Keystrokes</dt><dd id="hud-keys">0</dd></div>
+      <div><dt>Pointer samples</dt><dd id="hud-moves">0</dd></div>
+      <div><dt>Clicks</dt><dd id="hud-clicks">0</dd></div>
+      <div><dt>Untrusted events</dt><dd id="hud-untrusted">0</dd></div>
+      <div><dt>Slow inputs (over 16 ms)</dt><dd id="hud-slow">0</dd></div>
+    </dl>
+    <p id="bench-out">Overhead check: not run yet.</p>
+
+    <div class="out-head">
+      <span id="out-meta">Waiting for a submission</span>
+      <span class="actions">
+        <button type="button" class="ghost" id="bench">Run benchmark</button>
+        <button type="button" class="ghost" id="copy" disabled>Copy JSON</button>
+        <button type="button" class="ghost" id="download" disabled>Download</button>
+      </span>
+    </div>
+    <pre id="out" tabindex="0" aria-label="Telemetry payload">Submit the form to see the payload here. It is also logged to the browser console.</pre>
+  </aside>
+
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ==========================================================================
+     BioPrint collector
+     - Hot-path handlers only write numbers into preallocated buffers / small
+       arrays. No DOM reads or writes, no console output, no JSON, no math
+       beyond a subtraction. All analysis happens once, at submit.
+     - Listeners are passive and capture-phase on window so they never block
+       scrolling or input and still fire if the page stops propagation.
+     - Times come from event.timeStamp (hardware timestamp, same clock as
+       performance.now()), so main-thread jitter does not pollute the data.
+     ========================================================================== */
+
+  const CONFIG = {
+    ENROLL_SAMPLES: 3,          // how many times the user types their details to enroll
+    MOUSE_MIN_INTERVAL_MS: 8,   // pointer sampling cap (~125 Hz), keeps buffers small and rate uniform
+    MOUSE_BUFFER: 3000,         // ring buffer size, newest samples win
+    MISC_LIMIT: 300,            // cap for focus/paste/resize/etc. events
+    CLICK_LIMIT: 100,
+    MASK_PASSWORD_KEYS: true,   // never emit which printable key was pressed in the password field
+    ENGINE_URL: '/api/bioprint/telementry',           // e.g. '/api/bioprint/telemetry'. null = output only, nothing is sent
+  };
+  const SCHEMA = 'bioprint.telemetry/1.0';
+
+  const $ = (id) => document.getElementById(id);
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2) + Date.now().toString(16));
+  const LISTEN = { passive: true, capture: true };
+
+  /* ---------- Pointer ring buffer: [t, x, y] triples in one Float64Array ---------- */
+  class MoveBuf {
+    constructor(n) { this.n = n; this.a = new Float64Array(n * 3); this.head = 0; this.count = 0; this.lastT = -1e9; }
+    push(t, x, y) {
+      const o = (this.head % this.n) * 3;
+      this.a[o] = t; this.a[o + 1] = x; this.a[o + 2] = y;
+      this.head++;
+      if (this.count < this.n) this.count++;
+    }
+    snapshot() { // chronological copy
+      if (this.count < this.n) return this.a.slice(0, this.count * 3);
+      const s = (this.head % this.n) * 3, out = new Float64Array(this.a.length);
+      out.set(this.a.subarray(s));
+      out.set(this.a.subarray(0, s), this.a.length - s);
+      return out;
+    }
+    clear() { this.head = 0; this.count = 0; this.lastT = -1e9; }
+  }
+
+  /* ---------- State ---------- */
+  const pageSessionId = uid();
+  let sampleId = uid();
+  let S = performance.now();           // sample start on the performance clock
+  let mode = 'enroll';
+  let enrolled = 0;
+  let enrollHash = null;               // in-memory only, used to catch mismatched passwords while enrolling
+  let ptype = null;
+  let lastKeyCode = '', lastKeyT = -1e9, lastPointerDownT = -1e9, lastMoveT = -1e9, lastWheelT = -1e9;
+  let movesSinceClick = 0, miscDropped = 0, slowInputs = 0, slowSupported = true;
+
+  const move = new MoveBuf(CONFIG.MOUSE_BUFFER);
+  const pending = new Map();           // key code -> record awaiting keyup (spans fields, e.g. Tab)
+  const openClicks = new Map();        // pointerId -> click record awaiting pointerup
+  const clicks = [];
+  const misc = [];
+  const counters = { untrusted: 0, syntheticClicks: 0 };
+
+  const makeField = (id, mask) => ({
+    id, el: $(id), mask,
+    keys: [], repeats: 0, focusCount: 0,
+    focusT: null, firstKeyT: null, lastKeyT: null,
+    paste: 0, copy: 0, cut: 0, nonKeyInput: 0,
+  });
+  const fields = Object.assign(Object.create(null), {
+    username: makeField('username', false),
+    password: makeField('password', CONFIG.MASK_PASSWORD_KEYS),
+  });
+
+  function resetSample() {
+    S = performance.now();
+    sampleId = uid();
+    move.clear(); pending.clear(); openClicks.clear();
+    clicks.length = 0; misc.length = 0;
+    counters.untrusted = 0; counters.syntheticClicks = 0;
+    movesSinceClick = 0; miscDropped = 0; lastMoveT = -1e9; ptype = null;
+    drawnHead = 0; px = null;
+    for (const id in fields) {
+      const f = fields[id];
+      f.keys = []; f.repeats = 0; f.focusCount = 0;
+      f.focusT = f.firstKeyT = f.lastKeyT = null;
+      f.paste = f.copy = f.cut = f.nonKeyInput = 0;
+    }
+  }
+
+  const pushMisc = (rec) => { if (misc.length < CONFIG.MISC_LIMIT) misc.push(rec); else miscDropped++; };
+
+  /* ---------- Keystroke dynamics ---------- */
+  function keyClass(k) {
+    if (!k) return 'unknown';
+    if (k.length === 1) {
+      if (k >= '0' && k <= '9') return 'digit';
+      if (k === ' ') return 'space';
+      return /\p{L}/u.test(k) ? 'letter' : 'symbol';
+    }
+    return 'control';
+  }
+
+  function onKeyDown(e) {
+    const t = e.timeStamp;
+    lastKeyCode = e.code; lastKeyT = t;
+    const f = fields[e.target && e.target.id];
+    if (!f) return;
+    if (e.repeat) { f.repeats++; return; }
+    if (!e.isTrusted) counters.untrusted++;
+    if (f.firstKeyT === null) f.firstKeyT = t;
+    f.lastKeyT = t;
+    const key = e.key || '';
+    const printable = key.length === 1;
+    const rec = {
+      k: (f.mask && printable) ? null : e.code,        // masked in the password field
+      c: keyClass(key),
+      m: (e.shiftKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.altKey ? 4 : 0) | (e.metaKey ? 8 : 0),
+      d: t, u: null,
+    };
+    f.keys.push(rec);
+    pending.set(e.code, rec);
+  }
+
+  function onKeyUp(e) {
+    const rec = pending.get(e.code);
+    if (rec) { rec.u = e.timeStamp; pending.delete(e.code); }
+  }
+
+  /* ---------- Focus, clipboard, autofill ---------- */
+  function onFocusIn(e) {
+    const f = fields[e.target && e.target.id];
+    if (!f) return;
+    const t = e.timeStamp;
+    f.focusCount++;
+    if (f.focusT === null) f.focusT = t;
+    pushMisc({
+      t, type: 'focus', id: f.id,
+      via: (lastKeyCode === 'Tab' && t - lastKeyT < 250) ? 'tab' : (t - lastPointerDownT < 400 ? 'pointer' : 'other'),
+    });
+  }
+  function onFocusOut(e) {
+    const f = fields[e.target && e.target.id];
+    if (f) pushMisc({ t: e.timeStamp, type: 'blur', id: f.id });
+  }
+  function onInput(e) {
+    const f = fields[e.target && e.target.id];
+    if (!f) return;
+    const it = e.inputType;
+    if (!(e instanceof InputEvent) || it === 'insertFromPaste' || it === 'insertFromDrop' || it === 'insertReplacementText') {
+      f.nonKeyInput++;
+      pushMisc({ t: e.timeStamp, type: 'input', id: f.id, inputType: it || 'autofill_or_script' });
+    }
+  }
+  function onClipboard(e) {
+    const f = fields[e.target && e.target.id];
+    if (!f) return;
+    f[e.type]++;
+    pushMisc({ t: e.timeStamp, type: e.type, id: f.id });
+  }
+
+  /* ---------- Pointer / mouse dynamics ---------- */
+  function onPointerMove(e) {
+    const t = e.timeStamp;
+    if (t - move.lastT < CONFIG.MOUSE_MIN_INTERVAL_MS) return;
+    move.lastT = t; lastMoveT = t; movesSinceClick++;
+    if (ptype === null) ptype = e.pointerType;
+    if (!e.isTrusted) counters.untrusted++;
+    move.push(t, e.clientX, e.clientY);
+    if (!raf) raf = requestAnimationFrame(drawTrail);
+  }
+
+  function onPointerDown(e) {
+    const t = e.timeStamp;
+    lastPointerDownT = t;
+    if (!e.isTrusted) counters.untrusted++;
+    if (clicks.length >= CONFIG.CLICK_LIMIT) return;
+    const el = e.target, box = el.getBoundingClientRect();   // once per click, not per move
+    const rec = {
+      d: t, u: null, x: e.clientX, y: e.clientY, b: e.button, pt: e.pointerType, pr: e.pressure,
+      target: el.id || el.tagName.toLowerCase(),
+      off: box.width && box.height ? [(e.clientX - box.left) / box.width, (e.clientY - box.top) / box.height] : null,
+      gap: lastMoveT > -1e8 ? t - lastMoveT : null,
+      moves: movesSinceClick,
+    };
+    movesSinceClick = 0;
+    clicks.push(rec);
+    openClicks.set(e.pointerId, rec);
+  }
+  function onPointerUp(e) {
+    const rec = openClicks.get(e.pointerId);
+    if (rec) { rec.u = e.timeStamp; openClicks.delete(e.pointerId); }
+  }
+  function onClick(e) {
+    if (!e.isTrusted) counters.untrusted++;
+    // detail === 0 means no real pointer click; fine right after Enter/Space, suspicious otherwise
+    if (e.detail === 0 && e.timeStamp - lastKeyT > 400) counters.syntheticClicks++;
+  }
+  function onWheel(e) {
+    if (e.timeStamp - lastWheelT < 50) return;
+    lastWheelT = e.timeStamp;
+    pushMisc({ t: e.timeStamp, type: 'wheel', dy: Math.round(e.deltaY), unit: e.deltaMode });
+  }
+
+  /* ---------- Window / page ---------- */
+  const onResize = () => { pushMisc({ t: performance.now(), type: 'resize', w: innerWidth, h: innerHeight }); sizeCanvas(); };
+  const onVisibility = () => pushMisc({ t: performance.now(), type: 'visibility', state: document.visibilityState });
+  const onWinBlur = () => pushMisc({ t: performance.now(), type: 'window_blur' });
+  const onWinFocus = () => pushMisc({ t: performance.now(), type: 'window_focus' });
+
+  /* ==========================================================================
+     Analysis (runs once, at submit)
+     ========================================================================== */
+
+  function stats(arr) {
+    const n = arr.length;
+    if (!n) return null;
+    let sum = 0, min = Infinity, max = -Infinity;
+    for (const v of arr) { sum += v; if (v < min) min = v; if (v > max) max = v; }
+    const mean = sum / n;
+    let ss = 0;
+    for (const v of arr) ss += (v - mean) * (v - mean);
+    const sd = Math.sqrt(ss / (n > 1 ? n - 1 : 1));
+    const s = arr.slice().sort((a, b) => a - b);
+    const median = n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+    return { n, mean: r2(mean), sd: r2(sd), min: r2(min), median: r2(median), max: r2(max) };
+  }
+
+  function fieldPayload(f) {
+    const rel = (t) => r1(t - S);
+    const keys = f.keys, out = new Array(keys.length);
+    const dwell = [], dd = [], ud = [];
+    let printable = 0, backspaces = 0, deletes = 0, rollover = 0, pauses = 0, firstP = null, lastP = null;
+
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i], p = i ? keys[i - 1] : null;
+      const o = { i, k: k.k, c: k.c, m: k.m, down: rel(k.d), up: k.u === null ? null : rel(k.u) };
+      if (k.u !== null) { o.dwell = r1(k.u - k.d); dwell.push(k.u - k.d); }
+      if (p) {
+        const gap = k.d - p.d;
+        o.dd = r1(gap); dd.push(gap);
+        if (gap > 750) pauses++;
+        if (p.u !== null) {
+          const flight = k.d - p.u;
+          o.ud = r1(flight); ud.push(flight);
+          if (flight < 0) rollover++;
+        }
+      }
+      if (k.c === 'letter' || k.c === 'digit' || k.c === 'symbol' || k.c === 'space') {
+        printable++;
+        if (firstP === null) firstP = k.d;
+        lastP = k.d;
+      }
+      if (k.k === 'Backspace') backspaces++;
+      else if (k.k === 'Delete') deletes++;
+      out[i] = o;
+    }
+
+    const span = firstP !== null && lastP !== null ? lastP - firstP : 0;
+    const valueLength = f.el.value.length;
+    return {
+      valueLength,
+      focusAt: f.focusT === null ? null : rel(f.focusT),
+      firstKeyAt: f.firstKeyT === null ? null : rel(f.firstKeyT),
+      lastKeyAt: f.lastKeyT === null ? null : rel(f.lastKeyT),
+      timeToFirstKeyMs: f.focusT !== null && f.firstKeyT !== null ? r1(f.firstKeyT - f.focusT) : null,
+      focusCount: f.focusCount,
+      paste: f.paste, copy: f.copy, cut: f.cut,
+      nonKeyInputEvents: f.nonKeyInput,
+      keys: out,
+      derived: {
+        keyCount: keys.length, printable, backspaces, deletes, repeats: f.repeats,
+        valueLengthMinusNetKeys: valueLength - (printable - backspaces - deletes),
+        dwell: stats(dwell), dd: stats(dd), ud: stats(ud),
+        rolloverRatio: ud.length ? r2(rollover / ud.length) : null,
+        longPauses: pauses,
+        typingSpeedCps: printable > 1 && span > 0 ? r2((printable - 1) / (span / 1000)) : null,
+      },
+    };
+  }
+
+  function analyzeMouse(a, n) {
+    if (n < 2) return { samples: n };
+    let path = 0, idle = 0, teleports = 0, segments = 1, segStart = 0, segPath = 0, prevV = -1, prevAng = null;
+    const speeds = [], accels = [], turns = [], straight = [];
+    const closeSeg = (end) => {
+      if (segPath > 20) straight.push(Math.hypot(a[end * 3 + 1] - a[segStart * 3 + 1], a[end * 3 + 2] - a[segStart * 3 + 2]) / segPath);
+    };
+    for (let i = 1; i < n; i++) {
+      const o = i * 3, q = o - 3, dt = a[o] - a[q];
+      if (dt <= 0) continue;
+      if (dt > 150) { idle += dt; closeSeg(i - 1); segStart = i; segPath = 0; segments++; prevV = -1; prevAng = null; continue; }
+      const dx = a[o + 1] - a[q + 1], dy = a[o + 2] - a[q + 2], dist = Math.hypot(dx, dy);
+      path += dist; segPath += dist;
+      const v = dist / dt;
+      speeds.push(v);
+      if (v > 10) teleports++;                       // >10 px/ms is not physically plausible for a hand
+      if (prevV >= 0) accels.push((v - prevV) / dt);
+      prevV = v;
+      if (dist >= 1) {
+        const ang = Math.atan2(dy, dx);
+        if (prevAng !== null) { let d = Math.abs(ang - prevAng); if (d > Math.PI) d = 2 * Math.PI - d; turns.push(d); }
+        prevAng = ang;
+      }
+    }
+    closeSeg(n - 1);
+    return {
+      samples: n,
+      durationMs: r1(a[(n - 1) * 3] - a[0]),
+      pathLengthPx: r1(path),
+      idleMs: r1(idle),
+      segments,
+      teleports,
+      speedPxPerMs: stats(speeds),
+      accelPxPerMs2: stats(accels),
+      turnAngleRad: stats(turns),
+      straightness: stats(straight),   // chord / path length per movement segment; 1.0 = perfectly straight
+    };
+  }
+
+  function readEnvironment() {
+    const n = navigator;
+    return {
+      userAgent: n.userAgent,
+      platform: (n.userAgentData && n.userAgentData.platform) || n.platform,
+      languages: Array.from(n.languages || []),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      screen: { w: screen.width, h: screen.height, dpr: devicePixelRatio, colorDepth: screen.colorDepth },
+      viewport: { w: innerWidth, h: innerHeight },
+      hardwareConcurrency: n.hardwareConcurrency || null,
+      deviceMemory: n.deviceMemory || null,
+      maxTouchPoints: n.maxTouchPoints || 0,
+      pluginsLength: n.plugins ? n.plugins.length : null,
+      webdriver: n.webdriver === true,
+      headlessUserAgent: /HeadlessChrome/.test(n.userAgent),
+    };
+  }
+
+  function buildPayload(via) {
+    const b0 = performance.now();
+    const rel = (t) => r1(t - S);
+
+    const flat = move.snapshot(), n = flat.length / 3;
+    const moves = new Array(n);
+    for (let i = 0; i < n; i++) moves[i] = [rel(flat[i * 3]), r1(flat[i * 3 + 1]), r1(flat[i * 3 + 2])];
+    const mouse = analyzeMouse(flat, n);
+
+    const ku = fieldPayload(fields.username), kp = fieldPayload(fields.password);
+
+    // Client-side hints only. The client is attacker-controlled, so the engine must re-derive
+    // and decide on the server. These flags just make the demo legible.
+    const flags = [];
+    const env = readEnvironment();
+    if (env.webdriver) flags.push('webdriver');
+    if (env.headlessUserAgent) flags.push('headless_user_agent');
+    if (counters.untrusted) flags.push('untrusted_events');
+    if (counters.syntheticClicks) flags.push('synthetic_click');
+    if (n < 5 && ptype !== 'touch') flags.push('no_pointer_movement');
+    if (mouse.teleports > 0) flags.push('pointer_teleport');
+    if (mouse.straightness && mouse.straightness.n >= 3 && mouse.straightness.mean > 0.995) flags.push('perfectly_straight_paths');
+    for (const [id, k] of [['username', ku], ['password', kp]]) {
+      const d = k.derived;
+      if (k.paste || k.nonKeyInputEvents) flags.push(id + '_paste_or_autofill');
+      if (k.valueLength > 0 && d.printable === 0) flags.push(id + '_filled_without_keystrokes');
+      if (d.dwell && d.dwell.n >= 6 && d.dwell.sd < 2) flags.push(id + '_uniform_dwell');
+      if (d.dd && d.dd.n >= 6 && d.dd.mean < 25) flags.push(id + '_superhuman_speed');
+    }
+
+    const payload = {
+      schema: SCHEMA,
+      session: {
+        pageSessionId, sampleId, mode,
+        sampleIndex: mode === 'enroll' ? enrolled + 1 : null,
+        sampleTarget: mode === 'enroll' ? CONFIG.ENROLL_SAMPLES : null,
+        startedAtEpochMs: Math.round(performance.timeOrigin + S),
+        submittedAtEpochMs: Math.round(performance.timeOrigin + b0),
+        durationMs: r1(b0 - S),
+        submitVia: via,
+        units: 'times in ms since sample start; coordinates in CSS px (clientX/clientY)',
+      },
+      subject: { username: fields.username.el.value.trim() },
+      environment: env,
+      keystrokes: {
+        legend: 'k=key code (null = masked), c=class, m=modifier bits (1 shift, 2 ctrl, 4 alt, 8 meta), dwell=up-down, dd=press-to-press, ud=release-to-press (negative = rollover)',
+        username: ku,
+        password: kp,
+      },
+      pointer: {
+        type: ptype,
+        viewport: { w: innerWidth, h: innerHeight },
+        moveFormat: '[t_ms, x_px, y_px]',
+        moves,
+        clicks: clicks.map((c) => ({
+          down: rel(c.d), up: c.u === null ? null : rel(c.u),
+          dwell: c.u === null ? null : r1(c.u - c.d),
+          x: r1(c.x), y: r1(c.y), button: c.b, pointerType: c.pt, pressure: r2(c.pr),
+          target: c.target,
+          offsetInTarget: c.off ? [r2(c.off[0]), r2(c.off[1])] : null,
+          msSinceLastMove: c.gap === null ? null : r1(c.gap),
+          movesSincePrevClick: c.moves,
+        })),
+        derived: mouse,
+      },
+      events: misc.map((m) => Object.assign({}, m, { t: rel(m.t) })),
+      signals: { flags, untrustedEvents: counters.untrusted, syntheticClicks: counters.syntheticClicks },
+      collector: {
+        pointerMinIntervalMs: CONFIG.MOUSE_MIN_INTERVAL_MS,
+        pointerSamplesSeen: move.head,
+        pointerSamplesKept: n,
+        miscEventsDropped: miscDropped,
+        slowInputsOver16ms: slowSupported ? slowInputs : null,
+        buildMs: 0,
+      },
+    };
+    payload.collector.buildMs = r2(performance.now() - b0);
+    return payload;
+  }
+
+  /* ==========================================================================
+     Output
+     ========================================================================== */
+
+  // Pretty JSON, but number-only arrays (moves, offsets) stay on one line each.
+  const compactJSON = (obj) => JSON.stringify(obj, null, 2)
+    .replace(/\[([^\[\]{}"]*)\]/g, (m, inner) => '[' + inner.replace(/\s*\n\s*/g, ' ').trim() + ']');
+
+  const out = $('out'), outMeta = $('out-meta'), copyBtn = $('copy'), dlBtn = $('download');
+  let lastJSON = '';
+  const samples = [];
+
+  function showPayload(payload) {
+    lastJSON = compactJSON(payload);
+    out.textContent = lastJSON;
+    out.scrollTop = 0;
+    const kb = (lastJSON.length / 1024).toFixed(1);
+    outMeta.textContent = `${payload.session.mode === 'enroll' ? 'Enrollment sample ' + payload.session.sampleIndex : 'Sign-in attempt'}: ${kb} KB, built in ${payload.collector.buildMs} ms`;
+    copyBtn.disabled = dlBtn.disabled = false;
+
+    console.groupCollapsed(`[BioPrint] ${payload.session.mode} payload (${kb} KB, built in ${payload.collector.buildMs} ms)`);
+    console.log(payload);
+    console.log('Password keystroke timing:');
+    console.table(payload.keystrokes.password.keys);
+    console.groupEnd();
+
+    samples.push(payload);
+    window.BioPrint.samples = samples;
+    window.BioPrint.last = payload;
+  }
+
+  function sendToEngine(payload) {
+    if (!CONFIG.ENGINE_URL) return;
+    // Credentials travel on their own request over TLS; this channel carries timing only.
+    fetch(CONFIG.ENGINE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      credentials: 'include',
+    }).catch(() => {});
+  }
+
+  copyBtn.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(lastJSON); outMeta.textContent = 'Copied to clipboard'; }
+    catch (_) { const r = document.createRange(); r.selectNodeContents(out); const s = getSelection(); s.removeAllRanges(); s.addRange(r); outMeta.textContent = 'Selected. Press Ctrl/Cmd+C'; }
+  });
+  dlBtn.addEventListener('click', () => {
+    const url = URL.createObjectURL(new Blob([lastJSON], { type: 'application/json' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: `bioprint-${mode}-${Date.now()}.json` });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  /* ---------- Live pointer trace (inspector only, drawn in rAF, never in handlers) ---------- */
+  const canvas = $('trace'), ctx = canvas.getContext('2d');
+  let cw = 0, ch = 0, trailColor = '#5fe0c0', drawnHead = 0, px = null, py = null, raf = 0;
+
+  function sizeCanvas() {
+    const box = canvas.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2);
+    cw = box.width; ch = box.height;
+    canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    trailColor = getComputedStyle(canvas).color;
+  }
+  function drawTrail() {
+    raf = 0;
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'rgba(0,0,0,0.035)';
+    ctx.fillRect(0, 0, cw, ch);
+    ctx.globalCompositeOperation = 'source-over';
+    const vw = innerWidth, vh = innerHeight, n = move.n, a = move.a;
+    ctx.strokeStyle = trailColor; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let i = Math.max(drawnHead, move.head - 64); i < move.head; i++) {
+      const o = (i % n) * 3, x = a[o + 1] / vw * cw, y = a[o + 2] / vh * ch;
+      if (px !== null) { ctx.moveTo(px, py); ctx.lineTo(x, y); }
+      px = x; py = y;
+    }
+    ctx.stroke();
+    drawnHead = move.head;
+  }
+
+  /* ---------- Live counters (4 Hz, textContent only when the value changed) ---------- */
+  const hud = { keys: $('hud-keys'), moves: $('hud-moves'), clicks: $('hud-clicks'), untrusted: $('hud-untrusted'), slow: $('hud-slow') };
+  const setText = (el, v) => { v = String(v); if (el.textContent !== v) el.textContent = v; };
+  function paintHud() {
+    if (document.hidden) return;
+    setText(hud.keys, fields.username.keys.length + fields.password.keys.length);
+    setText(hud.moves, move.count);
+    setText(hud.clicks, clicks.length);
+    setText(hud.untrusted, counters.untrusted);
+    setText(hud.slow, slowSupported ? slowInputs : 'n/a');
+  }
+  try {
+    new PerformanceObserver((list) => { slowInputs += list.getEntries().length; })
+      .observe({ type: 'event', durationThreshold: 16, buffered: true });
+  } catch (_) { slowSupported = false; }
+
+  /* ---------- Overhead benchmark: cost of the hot-path writes themselves ---------- */
+  $('bench').addEventListener('click', () => {
+    const N = 200000, scratch = new MoveBuf(CONFIG.MOUSE_BUFFER);
+    let t0 = performance.now();
+    for (let i = 0; i < N; i++) scratch.push(i, i & 1023, (i * 7) & 511);
+    const moveNs = (performance.now() - t0) / N * 1e6;
+    const arr = [], M = N / 4;
+    t0 = performance.now();
+    for (let i = 0; i < M; i++) arr.push({ k: 'KeyA', c: 'letter', m: 0, d: i, u: null });
+    const keyNs = (performance.now() - t0) / M * 1e6;
+    $('bench-out').textContent = `Hot-path cost: about ${Math.round(moveNs)} ns per pointer sample and ${Math.round(keyNs)} ns per key record (one frame is 16,000,000 ns).`;
+  });
+
+  /* ==========================================================================
+     UI wiring
+     ========================================================================== */
+
+  const el = {
+    title: $('title'), lede: $('lede'), submit: $('submit'), status: $('status'), dots: $('dots'), form: $('form'),
+    tabEnroll: $('tab-enroll'), tabLogin: $('tab-login'),
+  };
+  const COPY = {
+    enroll: {
+      title: 'Set up your BioPrint',
+      lede: 'Type your username and password the way you normally do. We ask three times. We learn your rhythm and movement, never your password’s characters.',
+      autocomplete: 'new-password',
+    },
+    login: {
+      title: 'Welcome back',
+      lede: 'Sign in as usual. We compare how you type and move with your profile, so there are no codes to enter.',
+      autocomplete: 'current-password',
+    },
+  };
+
+  function setStatus(msg, tone) { el.status.textContent = msg; el.status.dataset.tone = tone || ''; }
+  function clearForm() { fields.username.el.value = ''; fields.password.el.value = ''; }
+
+  function render() {
+    const enroll = mode === 'enroll', N = CONFIG.ENROLL_SAMPLES;
+    el.title.textContent = COPY[mode].title;
+    el.lede.textContent = COPY[mode].lede;
+    fields.password.el.autocomplete = COPY[mode].autocomplete;
+    el.submit.textContent = enroll ? `Enroll (${enrolled + 1} of ${N})` : 'Sign in';
+    el.tabEnroll.setAttribute('aria-selected', String(enroll));
+    el.tabLogin.setAttribute('aria-selected', String(!enroll));
+    el.dots.hidden = !enroll;
+    el.dots.setAttribute('aria-label', `${enrolled} of ${N} enrollment samples captured`);
+    el.dots.textContent = '';
+    for (let i = 0; i < N; i++) { const d = document.createElement('i'); if (i < enrolled) d.className = 'on'; el.dots.appendChild(d); }
+  }
+
+  function setMode(m) {
+    if (m === mode) return;
+    mode = m;
+    clearForm(); resetSample(); setStatus('');
+    render();
+  }
+  el.tabEnroll.addEventListener('click', () => setMode('enroll'));
+  el.tabLogin.addEventListener('click', () => setMode('login'));
+
+  async function sha256(s) {
+    if (!(crypto && crypto.subtle)) return null;
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+    return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  el.form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const user = fields.username.el.value.trim(), pw = fields.password.el.value;
+    if (!user || !pw) {
+      setStatus('Enter both your username and password.', 'error');
+      (user ? fields.password.el : fields.username.el).focus();
+      return;
+    }
+    const via = !e.submitter ? 'script' : (lastKeyCode === 'Enter' && e.timeStamp - lastKeyT < 300 ? 'enter' : 'pointer');
+    const payload = buildPayload(via);          // snapshot first, before any await
+
+    if (mode === 'enroll') {
+      const h = await sha256(pw);
+      if (enrollHash && h && h !== enrollHash) {
+        setStatus('That password doesn’t match your first sample. Type the same password each time.', 'error');
+        clearForm(); resetSample(); fields.username.el.focus();
+        return;
+      }
+      if (h) enrollHash = h;
+    }
+
+    showPayload(payload);
+    sendToEngine(payload);
+
+    if (mode === 'enroll') {
+      enrolled++;
+      if (enrolled >= CONFIG.ENROLL_SAMPLES) {
+        enrolled = 0; enrollHash = null; mode = 'login';
+        setStatus('Enrollment complete. Now try signing in, then have someone else try the same credentials.', 'ok');
+      } else {
+        setStatus(`Sample ${enrolled} of ${CONFIG.ENROLL_SAMPLES} captured. Type your details again.`, 'ok');
+      }
+    } else {
+      setStatus('Behavior captured. This demo has no server, so the payload is shown on the right.', 'ok');
+    }
+    clearForm(); resetSample(); render();
+    if (mode === 'enroll') fields.username.el.focus();
+  });
+
+  /* ---------- Attach listeners ---------- */
+  addEventListener('keydown', onKeyDown, LISTEN);
+  addEventListener('keyup', onKeyUp, LISTEN);
+  addEventListener('pointermove', onPointerMove, LISTEN);
+  addEventListener('pointerdown', onPointerDown, LISTEN);
+  addEventListener('pointerup', onPointerUp, LISTEN);
+  addEventListener('click', onClick, LISTEN);
+  addEventListener('wheel', onWheel, LISTEN);
+  addEventListener('focusin', onFocusIn, LISTEN);
+  addEventListener('focusout', onFocusOut, LISTEN);
+  addEventListener('resize', onResize, { passive: true });
+  addEventListener('blur', onWinBlur, { passive: true });
+  addEventListener('focus', onWinFocus, { passive: true });
+  document.addEventListener('visibilitychange', onVisibility, { passive: true });
+  for (const type of ['input', 'paste', 'copy', 'cut']) {
+    el.form.addEventListener(type, type === 'input' ? onInput : onClipboard, { passive: true });
+  }
+
+  window.BioPrint = { config: CONFIG, samples, last: null };
+  sizeCanvas();
+  render();
+  paintHud();
+  setInterval(paintHud, 250);
+})();
+</script>
+</body>
+</html>
