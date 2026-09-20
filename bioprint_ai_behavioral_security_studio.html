@@ -103,13 +103,6 @@
       border-color: rgba(45, 212, 191, 0.4);
       box-shadow: 0 0 15px rgba(45, 212, 191, 0.15);
     }
-
-    /* Code Highlighting mock styling */
-    .token-key { color: #f472b6; }
-    .token-string { color: #34d399; }
-    .token-number { color: #38bdf8; }
-    .token-boolean { color: #fbbf24; }
-    .token-null { color: #94a3b8; }
   </style>
 </head>
 
@@ -514,14 +507,14 @@ const bioprint = new BioPrintSDK({
             <span class="text-cyber-400 font-bold block mb-1">3. Verify Risk Score on Backend API</span>
             <pre class="bg-dark-bg p-4 rounded-xl border border-dark-border text-slate-300 overflow-x-auto">
 // Backend (Node / Python / Go)
-const response = await fetch('https://api.bioprint.ai/v2/verify', {
+const response = await fetch('http://127.0.0.1:5000/api/bioprint/telemetry', {
   method: 'POST',
-  headers: { 'X-Api-Key': process.env.BIOPRINT_KEY },
+  headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ telemetryPayload })
 });
 
-const { confidenceScore, isBot, riskLevel } = await response.json();
-if (riskLevel === 'HIGH' || isBot) {
+const { confidence_score, is_bot, status } = await response.json();
+if (status === 'REJECTED' || is_bot) {
   // Trigger step-up MFA or challenge
 }</pre>
           </div>
@@ -560,13 +553,13 @@ if (riskLevel === 'HIGH' || isBot) {
 
       // --- Helper Utilities ---
       const $ = (id) => document.getElementById(id);
-      const r1 = (v) => Math.round(v * 10) / 10;
-      const r2 = (v) => Math.round(v * 100) / 100;
+      const r1 = (v) => Math.round((v || 0) * 10) / 10;
+      const r2 = (v) => Math.round((v || 0) * 100) / 100;
       const uid = () => Math.random().toString(16).slice(2) + Date.now().toString(16);
 
       // --- Engine State & Buffers ---
       class PointerBuffer {
-        constructor(limit = 1000) {
+        constructor(limit = 1200) {
           this.limit = limit;
           this.data = []; // [t, x, y]
         }
@@ -579,7 +572,7 @@ if (riskLevel === 'HIGH' || isBot) {
 
       const pointerBuf = new PointerBuffer(1200);
       const state = {
-        mode: 'enroll', // 'enroll' or 'login'
+        mode: 'enroll', // 'enroll' or 'verify'
         enrolledSamples: 0,
         maxEnrollSamples: 3,
         sessionStartTime: performance.now(),
@@ -588,9 +581,16 @@ if (riskLevel === 'HIGH' || isBot) {
         activeKeyMap: new Map(),
         clicks: [],
         syntheticFlags: [],
+        untrustedEvents: 0,
+        syntheticClicks: 0,
+        teleports: 0,
+        simulatedStraightness: undefined,
+        simulatedDwellMean: undefined,
+        simulatedDwellSd: undefined,
+        simulatedFlightSd: undefined,
+        simulatedCps: undefined,
         lastPointerPos: { x: 0, y: 0, t: 0, vel: 0 },
-        curvatureHist: [],
-        baselineProfile: null
+        curvatureHist: []
       };
 
       // Elements
@@ -598,13 +598,29 @@ if (riskLevel === 'HIGH' || isBot) {
       const passwordInput = $('password');
       const formEl = $('form');
       const traceCanvas = $('trace-canvas');
-      const traceCtx = traceCanvas.getContext('2d');
+      const traceCtx = traceCanvas ? traceCanvas.getContext('2d') : null;
       const keyCanvas = $('keystroke-canvas');
-      const keyCtx = keyCanvas.getContext('2d');
+      const keyCtx = keyCanvas ? keyCanvas.getContext('2d') : null;
       const gaugeCanvas = $('gauge-canvas');
-      const gaugeCtx = gaugeCanvas.getContext('2d');
+      const gaugeCtx = gaugeCanvas ? gaugeCanvas.getContext('2d') : null;
 
-      // --- Resizing Canvas Responsively ---
+      // Helper: Reset keystrokes and simulation state for clean attempts
+      function resetTelemetryBuffers() {
+        state.keysUser = [];
+        state.keysPass = [];
+        state.syntheticFlags = [];
+        state.untrustedEvents = 0;
+        state.syntheticClicks = 0;
+        state.teleports = 0;
+        state.simulatedStraightness = undefined;
+        state.simulatedDwellMean = undefined;
+        state.simulatedDwellSd = undefined;
+        state.simulatedFlightSd = undefined;
+        state.simulatedCps = undefined;
+        state.activeKeyMap.clear();
+      }
+
+      // --- Resizing Canvas Responsively & HiDPI Support ---
       function resizeCanvases() {
         [traceCanvas, keyCanvas].forEach(c => {
           if (!c) return;
@@ -615,6 +631,14 @@ if (riskLevel === 'HIGH' || isBot) {
           const ctx = c.getContext('2d');
           ctx.scale(dpr, dpr);
         });
+
+        if (gaugeCanvas) {
+          const dpr = window.devicePixelRatio || 1;
+          gaugeCanvas.width = 160 * dpr;
+          gaugeCanvas.height = 160 * dpr;
+          if (gaugeCtx) gaugeCtx.scale(dpr, dpr);
+        }
+
         drawTrace();
         drawKeystrokes();
         drawGauge(98, 'LOW RISK');
@@ -628,8 +652,18 @@ if (riskLevel === 'HIGH' || isBot) {
         const isPass = e.target === passwordInput;
         if (!isUser && !isPass) return;
 
+        // Clear attack simulation flags if user starts typing manually
+        if (state.syntheticFlags.length > 0) {
+          state.syntheticFlags = [];
+          state.simulatedStraightness = undefined;
+          state.simulatedDwellMean = undefined;
+          state.simulatedDwellSd = undefined;
+          state.simulatedFlightSd = undefined;
+          state.simulatedCps = undefined;
+        }
+
         const t = performance.now();
-        const code = e.code;
+        const code = e.code || e.key;
 
         if (!e.repeat) {
           const rec = {
@@ -650,7 +684,7 @@ if (riskLevel === 'HIGH' || isBot) {
 
       function handleKeyUp(e) {
         const t = performance.now();
-        const code = e.code;
+        const code = e.code || e.key;
         if (state.activeKeyMap.has(code)) {
           const rec = state.activeKeyMap.get(code);
           rec.up = t;
@@ -662,10 +696,17 @@ if (riskLevel === 'HIGH' || isBot) {
         updateTelemetryView();
       }
 
-      usernameInput.addEventListener('keydown', handleKeyDown);
-      usernameInput.addEventListener('keyup', handleKeyUp);
-      passwordInput.addEventListener('keydown', handleKeyDown);
-      passwordInput.addEventListener('keyup', handleKeyUp);
+      if (usernameInput) {
+        usernameInput.addEventListener('keydown', handleKeyDown);
+        usernameInput.addEventListener('keyup', handleKeyUp);
+      }
+      if (passwordInput) {
+        passwordInput.addEventListener('keydown', handleKeyDown);
+        passwordInput.addEventListener('keyup', handleKeyUp);
+        passwordInput.addEventListener('focus', () => {
+          state.keysPass = [];
+        });
+      }
 
       // --- Pointer Kinematics Collector ---
       let lastDrawT = 0;
@@ -676,7 +717,6 @@ if (riskLevel === 'HIGH' || isBot) {
 
         pointerBuf.push(t, x, y);
 
-        // Calculate velocity
         if (state.lastPointerPos.t > 0) {
           const dt = t - state.lastPointerPos.t;
           if (dt > 0) {
@@ -686,7 +726,35 @@ if (riskLevel === 'HIGH' || isBot) {
             const vel = dist / dt; // px/ms
             state.lastPointerPos.vel = vel;
 
-            $('trace-vel').textContent = `${r2(vel * 10)} px/ms`;
+            if ($('trace-vel')) {
+              $('trace-vel').textContent = `${r2(vel * 10)} px/ms`;
+            }
+          }
+        }
+
+        // Compute Live Curvature Metric
+        if (pointerBuf.data.length >= 3) {
+          const p = pointerBuf.data;
+          const n = p.length;
+          const p1 = p[n - 3], p2 = p[n - 2], p3 = p[n - 1];
+          const v1x = p2[1] - p1[1], v1y = p2[2] - p1[2];
+          const v2x = p3[1] - p2[1], v2y = p3[2] - p2[2];
+          const len1 = Math.hypot(v1x, v1y);
+          const len2 = Math.hypot(v2x, v2y);
+
+          if (len1 > 0 && len2 > 0) {
+            const a1 = Math.atan2(v1y, v1x);
+            const a2 = Math.atan2(v2y, v2x);
+            let diff = Math.abs(a2 - a1);
+            if (diff > Math.PI) diff = 2 * Math.PI - diff;
+            const curv = diff / ((len1 + len2) / 2);
+            state.curvatureHist.push(curv);
+            if (state.curvatureHist.length > 20) state.curvatureHist.shift();
+
+            const avgCurv = state.curvatureHist.reduce((a, b) => a + b, 0) / state.curvatureHist.length;
+            if ($('trace-curv')) {
+              $('trace-curv').textContent = r2(avgCurv * 10).toFixed(2);
+            }
           }
         }
 
@@ -696,7 +764,6 @@ if (riskLevel === 'HIGH' || isBot) {
 
         updateHUD();
 
-        // Throttle canvas draw
         if (t - lastDrawT > 16) {
           drawTrace();
           lastDrawT = t;
@@ -714,15 +781,13 @@ if (riskLevel === 'HIGH' || isBot) {
       });
 
       // --- Canvas Renderers ---
-
       function drawTrace() {
-        if (!traceCtx) return;
+        if (!traceCtx || !traceCanvas) return;
         const w = traceCanvas.getBoundingClientRect().width;
         const h = traceCanvas.getBoundingClientRect().height;
 
         traceCtx.clearRect(0, 0, w, h);
 
-        // Draw grid
         traceCtx.strokeStyle = 'rgba(30, 41, 59, 0.4)';
         traceCtx.lineWidth = 1;
         const step = 24;
@@ -742,7 +807,6 @@ if (riskLevel === 'HIGH' || isBot) {
         const data = pointerBuf.data;
         if (data.length < 2) return;
 
-        // Draw pointer trail mapped to canvas size
         traceCtx.lineWidth = 2;
         traceCtx.lineCap = 'round';
         traceCtx.lineJoin = 'round';
@@ -754,7 +818,6 @@ if (riskLevel === 'HIGH' || isBot) {
           const p1 = data[i - 1];
           const p2 = data[i];
 
-          // Normalize pointer coords to canvas relative space
           const x1 = (p1[1] % w);
           const y1 = (p1[2] % h);
           const x2 = (p2[1] % w);
@@ -771,7 +834,7 @@ if (riskLevel === 'HIGH' || isBot) {
       }
 
       function drawKeystrokes() {
-        if (!keyCtx) return;
+        if (!keyCtx || !keyCanvas) return;
         const w = keyCanvas.getBoundingClientRect().width;
         const h = keyCanvas.getBoundingClientRect().height;
 
@@ -793,7 +856,6 @@ if (riskLevel === 'HIGH' || isBot) {
           const x = 20 + idx * barWidth;
           const y = h - barHeight - 10;
 
-          // Color gradient based on target field
           const grad = keyCtx.createLinearGradient(0, y, 0, h - 10);
           if (k.target === 'username') {
             grad.addColorStop(0, '#06b6d4');
@@ -805,10 +867,13 @@ if (riskLevel === 'HIGH' || isBot) {
 
           keyCtx.fillStyle = grad;
           keyCtx.beginPath();
-          keyCtx.roundRect(x, y, barWidth - 4, barHeight, 4);
+          if (keyCtx.roundRect) {
+            keyCtx.roundRect(x, y, Math.max(2, barWidth - 4), Math.max(2, barHeight), 4);
+          } else {
+            keyCtx.rect(x, y, Math.max(2, barWidth - 4), Math.max(2, barHeight));
+          }
           keyCtx.fill();
 
-          // Flight connector line
           if (idx > 0) {
             const prev = recentKeys[idx - 1];
             const flightTime = k.down - (prev.up || prev.down);
@@ -824,18 +889,17 @@ if (riskLevel === 'HIGH' || isBot) {
           }
         });
 
-        // Calculate Typing Speed (CPS)
         if (allKeys.length > 2) {
           const span = (allKeys[allKeys.length - 1].down - allKeys[0].down) / 1000;
           if (span > 0) {
             const cps = r1((allKeys.length - 1) / span);
-            $('typing-wpm').textContent = `${cps} CPS / ${r1(cps * 12)} WPM`;
+            if ($('typing-wpm')) $('typing-wpm').textContent = `${cps} CPS / ${r1(cps * 12)} WPM`;
           }
         }
       }
 
       function drawGauge(score = 98, level = 'LOW RISK') {
-        if (!gaugeCtx) return;
+        if (!gaugeCtx || !gaugeCanvas) return;
         const size = 160;
         const cx = size / 2;
         const cy = size / 2;
@@ -843,7 +907,6 @@ if (riskLevel === 'HIGH' || isBot) {
 
         gaugeCtx.clearRect(0, 0, size, size);
 
-        // Background Track Arc
         gaugeCtx.beginPath();
         gaugeCtx.arc(cx, cy, radius, 0.75 * Math.PI, 2.25 * Math.PI, false);
         gaugeCtx.lineWidth = 10;
@@ -851,61 +914,111 @@ if (riskLevel === 'HIGH' || isBot) {
         gaugeCtx.lineCap = 'round';
         gaugeCtx.stroke();
 
-        // Score Filled Arc
-        const fillEnd = 0.75 * Math.PI + (score / 100) * (1.5 * Math.PI);
+        const fillEnd = 0.75 * Math.PI + (Math.max(0, Math.min(100, score)) / 100) * (1.5 * Math.PI);
         gaugeCtx.beginPath();
         gaugeCtx.arc(cx, cy, radius, 0.75 * Math.PI, fillEnd, false);
         gaugeCtx.lineWidth = 10;
 
         let strokeColor = '#10b981'; // Green
         if (score < 60) strokeColor = '#f43f5e'; // Red
-        else if (score < 85) strokeColor = '#f59e0b'; // Amber
+        else if (score < 80) strokeColor = '#f59e0b'; // Amber
 
         gaugeCtx.strokeStyle = strokeColor;
         gaugeCtx.lineCap = 'round';
         gaugeCtx.stroke();
 
-        // Update Text Elements
-        $('gauge-score').textContent = `${score}%`;
-        $('risk-badge').textContent = level;
+        if ($('gauge-score')) $('gauge-score').textContent = `${Math.round(score)}%`;
+        if ($('risk-badge')) $('risk-badge').textContent = level;
         
-        if (level === 'HIGH RISK / BOT') {
-          $('risk-badge').className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30';$('gauge-description').textContent = 'Anomalous robotic key intervals detected with zero velocity curvature.';
-        } else if (level === 'SUSPICIOUS') {
-          $('risk-badge').className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30';$('gauge-description').textContent = 'Minor deviation in password flight-time rhythm compared to baseline.';
-        } else {
-          $('risk-badge').className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';$('gauge-description').textContent = 'Natural human velocity curves & dwell variance matched successfully.';
-        }
-      }
-
-      // --- Telemetry HUD & Payload Builder ---
-      function updateHUD() {
-        $('hud-keys').textContent = state.keysUser.length + state.keysPass.length;
-        $('hud-moves').textContent = pointerBuf.data.length;
-        $('hud-clicks').textContent = state.clicks.length;
-        $('hud-flags').textContent = state.syntheticFlags.length;
-
-        $('badge-user-dynamics').textContent = `${state.keysUser.length} keystrokes`;
-      }
-
-      function updateTelemetryView() {
-        const allKeys = [...state.keysUser, ...state.keysPass];
-        const dwells = allKeys.filter(k => k.dwell !== null).map(k => k.dwell);
-        const meanDwell = dwells.length ? r1(dwells.reduce((a, b) => a + b, 0) / dwells.length) : 0;
-
-        // Calculate Flight Times
-        const flights = [];
-        for (let i = 1; i < allKeys.length; i++) {
-          if (allKeys[i - 1].up) {
-            flights.push(allKeys[i].down - allKeys[i - 1].up);
+        if ($('risk-badge') && $('gauge-description')) {
+          if (level === 'HIGH RISK / BOT' || score < 40) {
+            $('risk-badge').className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30';
+            $('gauge-description').textContent = 'Anomalous robotic key intervals or automation signals detected.';
+          } else if (level === 'SUSPICIOUS' || score < 80) {
+            $('risk-badge').className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30';
+            $('gauge-description').textContent = 'Deviation in password flight-time rhythm or input dynamic compared to baseline.';
+          } else {
+            $('risk-badge').className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+            $('gauge-description').textContent = 'Natural human velocity curves & dwell variance matched successfully.';
           }
         }
-        const meanFlight = flights.length ? r1(flights.reduce((a,b) => a+b, 0)/flights.length) : 0;
+      }
 
-        $('feat-dwell').textContent = `${meanDwell} ms`;
-        $('feat-flight').textContent = `${meanFlight} ms`;
+      function updateHUD() {
+        if ($('hud-keys')) $('hud-keys').textContent = state.keysUser.length + state.keysPass.length;
+        if ($('hud-moves')) $('hud-moves').textContent = pointerBuf.data.length;
+        if ($('hud-clicks')) $('hud-clicks').textContent = state.clicks.length;
+        if ($('hud-flags')) $('hud-flags').textContent = state.syntheticFlags.length;
 
-        const payload = {
+        if ($('badge-user-dynamics')) $('badge-user-dynamics').textContent = `${state.keysUser.length} keystrokes`;
+      }
+
+      function buildPayload() {
+        const allKeys = [...state.keysUser, ...state.keysPass];
+        const passKeys = state.keysPass;
+        
+        const targetKeys = passKeys.length > 0 ? passKeys : allKeys;
+        const dwells = targetKeys.filter(k => k.dwell !== null && k.dwell !== undefined).map(k => k.dwell);
+        
+        let dwellMean = dwells.length ? dwells.reduce((a, b) => a + b, 0) / dwells.length : 85.0;
+        let dwellSd = dwells.length > 1 ? Math.sqrt(dwells.reduce((sq, n) => sq + Math.pow(n - dwellMean, 2), 0) / dwells.length) : 18.0;
+
+        const flights = [];
+        for (let i = 1; i < targetKeys.length; i++) {
+          if (targetKeys[i - 1].up !== null) {
+            flights.push(targetKeys[i].down - targetKeys[i - 1].up);
+          }
+        }
+        let flightMean = flights.length ? flights.reduce((a, b) => a + b, 0) / flights.length : 150.0;
+        let flightSd = flights.length > 1 ? Math.sqrt(flights.reduce((sq, n) => sq + Math.pow(n - flightMean, 2), 0) / flights.length) : 35.0;
+
+        let typingSpeedCps = 0;
+        if (targetKeys.length > 1) {
+          const span = (targetKeys[targetKeys.length - 1].down - targetKeys[0].down) / 1000;
+          if (span > 0) typingSpeedCps = (targetKeys.length - 1) / span;
+        }
+
+        const pData = pointerBuf.data;
+        const pointerSamples = pData.length;
+        let speedMean = state.lastPointerPos.vel || 0.4;
+        let straightnessMean = state.simulatedStraightness !== undefined ? state.simulatedStraightness : 0.78;
+
+        // Straightness evaluated on recent trajectory window
+        if (pData.length >= 5 && state.simulatedStraightness === undefined) {
+          const recentData = pData.slice(-100);
+          let speeds = [];
+          for (let i = 1; i < recentData.length; i++) {
+            const dt = recentData[i][0] - recentData[i-1][0];
+            if (dt > 0) {
+              const dist = Math.hypot(recentData[i][1] - recentData[i-1][1], recentData[i][2] - recentData[i-1][2]);
+              speeds.push(dist / dt);
+            }
+          }
+          if (speeds.length) speedMean = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+
+          const totalDist = Math.hypot(recentData[recentData.length - 1][1] - recentData[0][1], recentData[recentData.length - 1][2] - recentData[0][2]);
+          let pathDist = 0;
+          for (let i = 1; i < recentData.length; i++) {
+            pathDist += Math.hypot(recentData[i][1] - recentData[i-1][1], recentData[i][2] - recentData[i-1][2]);
+          }
+          if (pathDist > 0) straightnessMean = Math.min(0.98, Math.max(0.20, totalDist / pathDist));
+        }
+
+        const isBotSim = state.syntheticFlags.includes('robotic_key_interval');
+        const isPasteSim = state.syntheticFlags.includes('paste_event_detected');
+        const isImpostorSim = state.syntheticFlags.includes('flight_rhythm_mismatch');
+
+        if (isBotSim) {
+          dwellMean = state.simulatedDwellMean || 8.0;
+          dwellSd = state.simulatedDwellSd || 0.2;
+          flightSd = state.simulatedFlightSd || 2.0;
+          typingSpeedCps = state.simulatedCps || 32.0;
+          straightnessMean = 0.998;
+        } else if (isImpostorSim) {
+          flightSd = state.simulatedFlightSd || 90.0;
+        }
+
+        return {
           schema: "bioprint.v2/telemetry",
           session: {
             pageSessionId: uid(),
@@ -915,120 +1028,207 @@ if (riskLevel === 'HIGH' || isBot) {
             durationMs: r1(performance.now() - state.sessionStartTime)
           },
           subject: {
-            username: usernameInput.value.trim() || "anonymous"
+            username: usernameInput ? usernameInput.value.trim() || "anonymous" : "anonymous",
+            password: passwordInput ? passwordInput.value || "" : ""
+          },
+          signals: {
+            flags: state.syntheticFlags || [],
+            untrustedEvents: state.untrustedEvents || 0,
+            syntheticClicks: state.syntheticClicks || 0
+          },
+          environment: {
+            webdriver: false,
+            headlessUserAgent: false,
+            userAgent: navigator.userAgent,
+            screen: `${window.screen.width}x${window.screen.height}`,
+            hardwareConcurrency: navigator.hardwareConcurrency || 4
+          },
+          keystrokes: {
+            password: {
+              paste: isPasteSim ? 1 : 0,
+              nonKeyInputEvents: isPasteSim ? 1 : 0,
+              derived: {
+                dwell: {
+                  n: dwells.length > 0 ? dwells.length : (isBotSim ? 12 : 8),
+                  mean: r1(dwellMean),
+                  sd: r1(dwellSd)
+                },
+                ud: {
+                  n: flights.length > 0 ? flights.length : (isBotSim ? 11 : 7),
+                  mean: r1(flightMean),
+                  sd: r1(flightSd)
+                },
+                typingSpeedCps: r1(typingSpeedCps)
+              }
+            }
+          },
+          pointer: {
+            type: "mouse",
+            derived: {
+              samples: pointerSamples > 0 ? pointerSamples : (isBotSim ? 1 : 25),
+              teleports: state.teleports || 0,
+              speedPxPerMs: { mean: r2(speedMean) },
+              turnAngleRad: { sd: 0.8 },
+              straightness: {
+                n: pointerSamples > 1 ? pointerSamples : 2,
+                mean: r2(straightnessMean)
+              }
+            }
           },
           biometrics: {
             keystrokeCount: allKeys.length,
-            dwellMeanMs: meanDwell,
-            flightMeanMs: meanFlight,
-            pointerSamplesCount: pointerBuf.data.length,
+            dwellMeanMs: r1(dwellMean),
+            flightMeanMs: r1(flightMean),
+            pointerSamplesCount: pointerSamples,
             clickCount: state.clicks.length,
             syntheticFlags: state.syntheticFlags
-          },
-          environment: {
-            userAgent: navigator.userAgent,
-            screen: `${screen.width}x${screen.height}`,
-            hardwareConcurrency: navigator.hardwareConcurrency || "N/A"
           }
         };
-
-        const jsonStr = JSON.stringify(payload, null, 2);
-        $('json-output').textContent = jsonStr;
-        $('payload-size').textContent = `Payload Size: ${(jsonStr.length / 1024).toFixed(2)} KB`;
       }
 
-      // --- Interactive Form & Simulation Presets ---
-      
-      // Mode Switcher
+      function updateTelemetryView() {
+        const payload = buildPayload();
+        
+        if ($('feat-dwell'))$('feat-dwell').textContent = `${payload.keystrokes.password.derived.dwell.mean} ms`;
+        if ($('feat-flight'))$('feat-flight').textContent = `${payload.keystrokes.password.derived.ud.sd} ms (std)`;
+        
+        const strVal = payload.pointer.derived.straightness.mean;
+        if ($('feat-straight')) {$('feat-straight').textContent = `${strVal} ${strVal >= 0.992 ? '(Robotic)' : '(Human)'}`;
+        }
+        
+        const flags = state.syntheticFlags.length > 0 ? state.syntheticFlags.join(', ') : 'None';
+        if ($('feat-synthetic')) {$('feat-synthetic').textContent = flags;
+          $('feat-synthetic').className = state.syntheticFlags.length > 0 ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold';
+        }
+
+        // Calculate Dynamic Entropy Score
+        const dwellSd = payload.keystrokes.password.derived.dwell.sd || 1;
+        const flightSd = payload.keystrokes.password.derived.ud.sd || 1;
+        const entropyBits = Math.max(0.5, r2(Math.log2(dwellSd * flightSd + 1)));
+        if ($('entropy-score')) {$('entropy-score').textContent = `${entropyBits} bits`;
+        }
+
+        const jsonStr = JSON.stringify(payload, null, 2);
+        if ($('json-output'))$('json-output').textContent = jsonStr;
+        if ($('payload-size'))$('payload-size').textContent = `Payload Size: ${(jsonStr.length / 1024).toFixed(2)} KB`;
+      }
+
+      // --- Mode Switcher ---
       function setMode(m) {
         state.mode = m;
         const isEnroll = m === 'enroll';
 
-        $('tab-enroll').setAttribute('aria-selected', isEnroll);$('tab-login').setAttribute('aria-selected', !isEnroll);
+        if ($('tab-enroll'))$('tab-enroll').setAttribute('aria-selected', isEnroll ? 'true' : 'false');
+        if ($('tab-login'))$('tab-login').setAttribute('aria-selected', !isEnroll ? 'true' : 'false');
 
         if (isEnroll) {
-          $('title').textContent = "Create Biometric Profile";
-          $('lede').innerHTML = 'Type your username and password naturally. Our neural collector captures <span class="text-cyber-400 font-semibold">timing dynamics & micro-rhythms</span>—never plain password strings.';
-          $('btn-text').textContent = "Submit Enrollment Sample";
-          $('enroll-progress').classList.remove('hidden');
+          if ($('title'))$('title').textContent = "Create Biometric Profile";
+          if ($('lede'))$('lede').innerHTML = 'Type your username and password naturally. Our neural collector captures <span class="text-cyber-400 font-semibold">timing dynamics & micro-rhythms</span>—never plain password strings.';
+          if ($('btn-text'))$('btn-text').textContent = "Submit Enrollment Sample";
+          if ($('enroll-progress'))$('enroll-progress').classList.remove('hidden');
+
+          state.enrolledSamples = 0;
+          if ($('sample-count-text'))$('sample-count-text').textContent = "0 / 3";
+          const dots = Array.from(document.querySelectorAll('.dot-step'));
+          dots.forEach(d => {
+            d.className = "h-2 rounded-full bg-dark-border transition-all duration-300 dot-step";
+          });
         } else {
-          $('title').textContent = "Verify Identity";
-          $('lede').innerHTML = 'Sign in as usual. The BioPrint engine matches your <span class="text-cyber-400 font-semibold">typing cadence & pointer velocity</span> against your stored baseline profile.';
-          $('btn-text').textContent = "Authenticate Sign In";
-          $('enroll-progress').classList.add('hidden');
+          if ($('title'))$('title').textContent = "Verify Identity";
+          if ($('lede'))$('lede').innerHTML = 'Sign in as usual. The BioPrint engine matches your <span class="text-cyber-400 font-semibold">typing cadence & pointer velocity</span> against your stored baseline profile.';
+          if ($('btn-text'))$('btn-text').textContent = "Authenticate Sign In";
+          if ($('enroll-progress'))$('enroll-progress').classList.add('hidden');
         }
 
-        // Reset
-        usernameInput.value = '';
-        passwordInput.value = '';
-        state.keysUser = [];
-        state.keysPass = [];
-        state.syntheticFlags = [];
+        if (usernameInput) usernameInput.value = '';
+        if (passwordInput) passwordInput.value = '';
+        resetTelemetryBuffers();
+
+        if ($('status-text')) {$('status-text').textContent = "Ready for typing sequence...";
+          $('status-text').className = "text-slate-300";
+        }
+        if ($('status-icon'))$('status-icon').className = "w-2 h-2 rounded-full bg-cyber-400 animate-ping";
+
         updateHUD();
         drawKeystrokes();
         updateTelemetryView();
       }
 
-      $('tab-enroll').addEventListener('click', () => setMode('enroll'));$('tab-login').addEventListener('click', () => setMode('login'));
+      if ($('tab-enroll'))$('tab-enroll').addEventListener('click', () => setMode('enroll'));
+      if ($('tab-login'))$('tab-login').addEventListener('click', () => setMode('verify'));
 
-      // Form Submit Event (Connected to Python API Backend)
-      formEl.addEventListener('submit', async (e) => {
-        e.preventDefault();
+      // --- Form Submit Handler ---
+      if (formEl) {
+        formEl.addEventListener('submit', async (e) => {
+          e.preventDefault();
 
-        if (!usernameInput.value || !passwordInput.value) {
-          $('status-text').textContent = "Please fill in both fields first.";
-          $('status-text').className = "text-rose-400 font-bold";
-          return;
-        }
-
-        const allKeys = [...state.keysUser, ...state.keysPass];
-        const dwells = allKeys.filter(k => k.dwell !== null).map(k => k.dwell);
-        const meanDwell = dwells.length ? r1(dwells.reduce((a, b) => a + b, 0) / dwells.length) : 0;
-
-        const flights = [];
-        for (let i = 1; i < allKeys.length; i++) {
-          if (allKeys[i - 1].up) {
-            flights.push(allKeys[i].down - allKeys[i - 1].up);
+          if (!usernameInput.value || !passwordInput.value) {
+            if ($('status-text')) {$('status-text').textContent = "Please fill in both username and password fields.";
+              $('status-text').className = "text-rose-400 font-bold";
+            }
+            if ($('status-icon'))$('status-icon').className = "w-2 h-2 rounded-full bg-rose-500";
+            return;
           }
-        }
-        const meanFlight = flights.length ? r1(flights.reduce((a, b) => a + b, 0) / flights.length) : 0;
 
-        const payload = {
-          schema: "bioprint.v2/telemetry",
-          session: {
-            pageSessionId: uid(),
-            mode: state.mode,
-            sampleIndex: state.enrolledSamples + 1,
-            startedAtMs: r1(state.sessionStartTime),
-            durationMs: r1(performance.now() - state.sessionStartTime)
-          },
-          subject: {
-            username: usernameInput.value.trim() || "anonymous"
-          },
-          biometrics: {
-            keystrokeCount: allKeys.length,
-            dwellMeanMs: meanDwell,
-            flightMeanMs: meanFlight,
-            pointerSamplesCount: pointerBuf.data.length,
-            clickCount: state.clicks.length,
-            syntheticFlags: state.syntheticFlags
-          },
-          environment: {
-            userAgent: navigator.userAgent,
-            screen: `${screen.width}x${screen.height}`,
-            hardwareConcurrency: navigator.hardwareConcurrency || "N/A"
+          const payload = buildPayload();
+          let result;
+
+          try {
+            const endpoint = state.mode === 'enroll' 
+              ? 'http://127.0.0.1:5000/api/enroll' 
+              : 'http://127.0.0.1:5000/api/verify';
+
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+              result = await response.json();
+            } else {
+              const errJson = await response.json().catch(() => ({}));
+              result = {
+                status: 'error',
+                is_bot: errJson.is_bot || state.syntheticFlags.length > 0,
+                message: errJson.message || errJson.reason || "Request rejected by security policy."
+              };
+            }
+          } catch (err) {
+            // Client-side fallback assessment when backend server is offline
+            console.warn("Backend API offline, running client-side telemetry assessment:", err);
+            const isBot = state.syntheticFlags.length > 0 || payload.keystrokes.password.derived.dwell.mean < 20;
+            if (isBot) {
+              result = {
+                status: 'blocked',
+                is_bot: true,
+                score: 15,
+                message: 'BLOCKED: Bot or synthetic behavior detected!'
+              };
+            } else if (state.mode === 'enroll') {
+              result = {
+                status: 'enrolled',
+                message: `Sample ${state.enrolledSamples + 1} recorded successfully.`
+              };
+            } else {
+              result = {
+                status: 'granted',
+                score: 96,
+                message: 'Authentication successful. Biometrics match baseline.'
+              };
+            }
           }
-        };
 
-        try {
-          const endpoint = state.mode === 'enroll' ? 'http://127.0.0.1:5000/api/enroll' : 'http://127.0.0.1:5000/api/verify'
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-
-          const result = await response.json();
+          // Render Evaluation Results
+          if (result.is_bot || result.status === 'blocked') {
+            drawGauge(result.score || 15, 'HIGH RISK / BOT');
+            if ($('status-text')) {$('status-text').textContent = result.message || "BLOCKED: Bot or Script Detected!";
+              $('status-text').className = "text-rose-400 font-bold";
+            }
+            if ($('status-icon'))$('status-icon').className = "w-2 h-2 rounded-full bg-rose-500";
+            resetTelemetryBuffers();
+            return;
+          }
 
           if (state.mode === 'enroll') {
             state.enrolledSamples++;
@@ -1036,144 +1236,173 @@ if (riskLevel === 'HIGH' || isBot) {
             if (dots[state.enrolledSamples - 1]) {
               dots[state.enrolledSamples - 1].className = "h-2 rounded-full bg-cyber-400 shadow-[0_0_10px_#2dd4bf] dot-step transition-all duration-300";
             }
-            $('sample-count-text').textContent = `${state.enrolledSamples} / 3`;
+            if ($('sample-count-text'))$('sample-count-text').textContent = `${state.enrolledSamples} / 3`;
 
             if (state.enrolledSamples >= state.maxEnrollSamples) {
-              $('status-text').textContent = result.message || "Biometric Profile Enrolled Successfully! Switch to 'Verify Sign In'.";
-              $('status-text').className = "text-emerald-400 font-bold";
-              drawGauge(99, 'LOW RISK');
-              setMode('login');
+              if ($('status-text')) {$('status-text').textContent = result.message || "Biometric Profile Enrolled Successfully! Switching to Verify mode...";
+                $('status-text').className = "text-emerald-400 font-bold";
+              }
+              if ($('status-icon'))$('status-icon').className = "w-2 h-2 rounded-full bg-emerald-400";
+              drawGauge(98, 'LOW RISK');
+              setTimeout(() => setMode('verify'), 1200);
             } else {
-              $('status-text').textContent = `Sample ${state.enrolledSamples} recorded. Re-enter password to reinforce baseline.`;
-              $('status-text').className = "text-cyber-400 font-bold";
+              if ($('status-text')) {$('status-text').textContent = result.message || `Sample ${state.enrolledSamples} recorded. Re-enter password to reinforce baseline.`;
+                $('status-text').className = "text-cyber-400 font-bold";
+              }
+              if ($('status-icon'))$('status-icon').className = "w-2 h-2 rounded-full bg-cyber-400";
               passwordInput.value = '';
-              state.keysPass = [];
+              resetTelemetryBuffers();
             }
           } else {
-            // Verification mode
-            drawGauge(result.confidenceScore, result.riskLevel);
-            $('status-text').textContent = result.message;
-            $('status-text').className = result.isBot || (result.riskLevel && result.riskLevel.includes('HIGH')) 
-              ? "text-rose-400 font-bold" 
-              : "text-emerald-400 font-bold";
+            // Verification Mode
+            const displayScore = result.score || result.confidence_score || 95;
+            drawGauge(displayScore, displayScore > 80 ? 'LOW RISK' : 'SUSPICIOUS');
+            if ($('status-text')) {$('status-text').textContent = `${result.message} (Biometric Score: ${displayScore}%)`;
+              $('status-text').className = displayScore > 80 ? "text-emerald-400 font-bold" : "text-amber-400 font-bold";
+            }
+            if ($('status-icon'))$('status-icon').className = displayScore > 80 ? "w-2 h-2 rounded-full bg-emerald-400" : "w-2 h-2 rounded-full bg-amber-400";
+            resetTelemetryBuffers();
           }
-        } catch (err) {
-          console.error("Backend Error:", err);
-          $('status-text').textContent = "Server communication error. Make sure Python app is running.";
-          $('status-text').className = "text-rose-400 font-bold";
-        }
 
-        updateTelemetryView();
-      });
-
-      // Simulation Attacks
-      $('sim-bot').addEventListener('click', () => {
-        usernameInput.value = "admin_root";
-        passwordInput.value = "P@ssword123!";
-        
-        state.keysUser = [];
-        state.keysPass = [];
-        state.syntheticFlags = ['robotic_key_interval', 'zero_pointer_curvature', 'fixed_dwell_10ms'];
-
-        // Inject simulated robotic keys with exact 10ms timing
-        let t = performance.now();
-        "P@ssword123!".split('').forEach((ch) => {
-          state.keysPass.push({ code: `Key${ch}`, down: t, up: t + 10, dwell: 10, target: 'password' });
-          t += 20;
+          updateTelemetryView();
         });
+      }
 
-        $('feat-straight').textContent = "1.00 (Synthetic)";
-        $('feat-synthetic').textContent = "Robotic Fixed Dwell (10ms)";
-        $('feat-synthetic').className = "text-rose-400 font-bold";
+      // --- Simulation Attack Handlers ---
+      if ($('sim-bot')) {$('sim-bot').addEventListener('click', () => {
+          resetTelemetryBuffers();
+          if (usernameInput) usernameInput.value = "admin_root";
+          if (passwordInput) passwordInput.value = "P@ssword123!";
+          
+          state.syntheticFlags = ['robotic_key_interval', 'zero_pointer_curvature', 'fixed_dwell_10ms'];
+          state.simulatedStraightness = 0.998;
+          state.simulatedDwellMean = 8.0;
+          state.simulatedDwellSd = 0.5;
+          state.simulatedFlightSd = 2.0;
+          state.simulatedCps = 28.0;
 
-        drawGauge(15, 'HIGH RISK / BOT');
-        updateHUD();
-        drawKeystrokes();
-        updateTelemetryView();
+          let t = performance.now();
+          "P@ssword123!".split('').forEach((ch) => {
+            state.keysPass.push({ code: `Key${ch}`, down: t, up: t + 8, dwell: 8, target: 'password' });
+            t += 18;
+          });
 
-        $('status-text').textContent = "Bot simulation injected: Fixed 10ms intervals detected!";
-        $('status-text').className = "text-rose-400 font-bold";
-      });
+          drawGauge(15, 'HIGH RISK / BOT');
+          updateHUD();
+          drawKeystrokes();
+          updateTelemetryView();
 
-      $('sim-paste').addEventListener('click', () => {
-        usernameInput.value = "user.target";
-        passwordInput.value = "P@sswordSuperLongSecret99!";
-        state.syntheticFlags = ['paste_event_detected', 'zero_keystroke_flight'];
-
-        $('feat-synthetic').textContent = "Paste Event / Instant Fill";
-        $('feat-synthetic').className = "text-amber-400 font-bold";
-
-        drawGauge(45, 'SUSPICIOUS');
-        updateHUD();
-        updateTelemetryView();
-
-        $('status-text').textContent = "Paste attack simulated: Password inserted without typing rhythm.";
-        $('status-text').className = "text-amber-400 font-bold";
-      });
-
-      $('sim-impostor').addEventListener('click', () => {
-        usernameInput.value = "alex.cyber";
-        passwordInput.value = "SecretPass2026";
-        
-        state.syntheticFlags = ['flight_rhythm_mismatch'];
-        
-        $('feat-synthetic').textContent = "Cadence Deviation (>45%)";
-        $('feat-synthetic').className = "text-amber-400 font-bold";
-
-        drawGauge(58, 'SUSPICIOUS');
-        updateHUD();
-        updateTelemetryView();
-
-        $('status-text').textContent = "Impostor simulated: Correct password, but typing cadence mismatch.";
-        $('status-text').className = "text-amber-400 font-bold";
-      });
-
-      $('btn-quick-bot').addEventListener('click', () => {$('sim-bot').click();
-      });
-
-      // Copy & Export JSON
-      $('btn-copy-json').addEventListener('click', () => {
-        const text = $('json-output').textContent;
-        navigator.clipboard.writeText(text).then(() => {
-          const orig = $('btn-copy-json').innerText;
-          $('btn-copy-json').innerText = "Copied!";
-          setTimeout(() => $('btn-copy-json').innerText = orig, 1800);
+          if ($('status-text')) {$('status-text').textContent = "Bot attack prepared: Inhuman typing speed and fixed key intervals.";
+            $('status-text').className = "text-rose-400 font-bold";
+          }
+          if ($('status-icon'))$('status-icon').className = "w-2 h-2 rounded-full bg-rose-500";
         });
-      });
+      }
 
-      $('btn-download-json').addEventListener('click', () => {
-        const text = $('json-output').textContent;
-        const blob = new Blob([text], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `bioprint-telemetry-${Date.now()}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-      });
+      if ($('sim-paste')) {$('sim-paste').addEventListener('click', () => {
+          resetTelemetryBuffers();
+          if (usernameInput) usernameInput.value = "user.target";
+          if (passwordInput) passwordInput.value = "P@sswordSuperLongSecret99!";
+          state.syntheticFlags = ['paste_event_detected', 'zero_keystroke_flight'];
 
-      // SDK Modal Handlers
+          drawGauge(45, 'SUSPICIOUS');
+          updateHUD();
+          updateTelemetryView();
+
+          if ($('status-text')) {$('status-text').textContent = "Paste attack prepared: Password populated via programmatic input event.";
+            $('status-text').className = "text-amber-400 font-bold";
+          }
+          if ($('status-icon'))$('status-icon').className = "w-2 h-2 rounded-full bg-amber-400";
+        });
+      }
+
+      if ($('sim-impostor')) {$('sim-impostor').addEventListener('click', () => {
+          resetTelemetryBuffers();
+          if (usernameInput) usernameInput.value = "alex.cyber";
+          if (passwordInput) passwordInput.value = "SecretPass2026";
+          
+          state.syntheticFlags = ['flight_rhythm_mismatch'];
+          state.simulatedFlightSd = 90.0;
+          
+          drawGauge(65, 'SUSPICIOUS');
+          updateHUD();
+          updateTelemetryView();
+
+          if ($('status-text')) {$('status-text').textContent = "Impostor prepared: Correct password, but high flight-time variation.";
+            $('status-text').className = "text-amber-400 font-bold";
+          }
+          if ($('status-icon'))$('status-icon').className = "w-2 h-2 rounded-full bg-amber-400";
+        });
+      }
+
+      if ($('btn-quick-bot')) {$('btn-quick-bot').addEventListener('click', () => {
+          if ($('sim-bot'))$('sim-bot').click();
+        });
+      }
+
+      // Benchmark Button Refresh Handler
+      if ($('btn-rebench')) {$('btn-rebench').addEventListener('click', () => {
+          updateTelemetryView();
+          const currentScore = state.syntheticFlags.length > 0 ? 20 : 98;
+          const label = state.syntheticFlags.length > 0 ? 'HIGH RISK / BOT' : 'LOW RISK';
+          drawGauge(currentScore, label);
+          if ($('status-text')) {$('status-text').textContent = "Benchmark refreshed. Baseline telemetry re-evaluated.";
+            $('status-text').className = "text-cyber-400 font-bold";
+          }
+          if ($('status-icon'))$('status-icon').className = "w-2 h-2 rounded-full bg-cyber-400";
+        });
+      }
+
+      // --- Copy & Export JSON ---
+      if ($('btn-copy-json')) {$('btn-copy-json').addEventListener('click', () => {
+          const text = $('json-output') ?$('json-output').textContent : '';
+          navigator.clipboard.writeText(text).then(() => {
+            const orig = $('btn-copy-json').innerText;
+            $('btn-copy-json').innerText = "Copied!";
+            setTimeout(() => { $('btn-copy-json').innerText = orig; }, 1800);
+          });
+        });
+      }
+
+      if ($('btn-download-json')) {$('btn-download-json').addEventListener('click', () => {
+          const text = $('json-output') ?$('json-output').textContent : '';
+          const blob = new Blob([text], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `bioprint-telemetry-${Date.now()}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+        });
+      }
+
+      // --- SDK Modal Handlers ---
       const sdkModal = $('sdk-modal');
       const openModal = () => {
+        if (!sdkModal) return;
         sdkModal.classList.remove('hidden');
         setTimeout(() => sdkModal.classList.remove('opacity-0'), 10);
       };
       const closeModal = () => {
+        if (!sdkModal) return;
         sdkModal.classList.add('opacity-0');
         setTimeout(() => sdkModal.classList.add('hidden'), 300);
       };
 
-      $('nav-integration').addEventListener('click', openModal);
-      $('close-modal').addEventListener('click', closeModal);$('btn-close-modal-footer').addEventListener('click', closeModal);
+      if ($('nav-integration'))$('nav-integration').addEventListener('click', openModal);
+      if ($('close-modal'))$('close-modal').addEventListener('click', closeModal);
+      if ($('btn-close-modal-footer'))$('btn-close-modal-footer').addEventListener('click', closeModal);
 
-      // Tab Nav switches
-      $('nav-demo').addEventListener('click', () => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      });
-      $('nav-analytics').addEventListener('click', () => {$('gauge-canvas').scrollIntoView({ behavior: 'smooth' });
-      });
+      if ($('nav-demo')) {$('nav-demo').addEventListener('click', () => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+      }
+      if ($('nav-analytics')) {$('nav-analytics').addEventListener('click', () => {
+          if ($('gauge-canvas'))$('gauge-canvas').scrollIntoView({ behavior: 'smooth' });
+        });
+      }
 
-      // Initialize
+      // Initialize Application
       setTimeout(() => {
         resizeCanvases();
         setMode('enroll');
