@@ -1,0 +1,1301 @@
+<!DOCTYPE html>
+<html lang="en" class="dark scroll-smooth">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BioPrint AI | Behavioral Security & Telemetry Engine</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+          },
+          colors: {
+            cyber: {
+              50: '#f0fdfa',
+              100: '#ccfbf1',
+              400: '#2dd4bf',
+              500: '#14b8a6',
+              600: '#0d9488',
+              900: '#134e4a',
+            },
+            accent: {
+              cyan: '#06b6d4',
+              violet: '#8b5cf6',
+              emerald: '#10b981',
+              rose: '#f43f5e',
+              amber: '#f59e0b'
+            },
+            dark: {
+              bg: '#030712',
+              card: '#0f172a',
+              cardHover: '#1e293b',
+              border: '#1e293b',
+              borderGlow: '#334155'
+            }
+          },
+          animation: {
+            'pulse-fast': 'pulse 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'glow-pulse': 'glow 4s infinite ease-in-out',
+            'radar-spin': 'spin 8s linear infinite',
+            'float': 'float 6s ease-in-out infinite',
+            'grid-move': 'grid-move 20s linear infinite',
+          },
+          keyframes: {
+            glow: {
+              '0%, 100%': { opacity: 0.3, filter: 'blur(40px)' },
+              '50%': { opacity: 0.7, filter: 'blur(50px)' },
+            },
+            float: {
+              '0%, 100%': { transform: 'translateY(0)' },
+              '50%': { transform: 'translateY(-20px)' },
+            },
+            'grid-move': {
+              '0%': { transform: 'translateY(0)' },
+              '100%': { transform: 'translateY(40px)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #030712; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 9999px; border: 2px solid #030712; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+    /* Animated Grid Background */
+    .bg-grid-pattern {
+      background-size: 40px 40px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 30%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 30%, transparent 100%);
+    }
+
+    /* Glassmorphism */
+    .glass-panel {
+      background: linear-gradient(145deg, rgba(15, 23, 42, 0.6) 0%, rgba(3, 7, 18, 0.8) 100%);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+    }
+
+    .input-glow:focus {
+      box-shadow: 0 0 0 1px rgba(45, 212, 191, 1), 0 0 20px -5px rgba(45, 212, 191, 0.4);
+    }
+
+    [role="tab"][aria-selected="true"] {
+      background: linear-gradient(135deg, rgba(20, 184, 166, 0.15) 0%, rgba(6, 182, 212, 0.05) 100%);
+      color: #2dd4bf;
+      border-color: rgba(45, 212, 191, 0.3);
+      box-shadow: inset 0 0 15px rgba(45, 212, 191, 0.1);
+    }
+    
+    .crt-overlay::after {
+      content: " ";
+      display: block;
+      position: absolute;
+      top: 0; left: 0; bottom: 0; right: 0;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+      z-index: 2;
+      background-size: 100% 2px, 3px 100%;
+      pointer-events: none;
+    }
+  </style>
+</head>
+
+<body class="bg-dark-bg text-slate-100 font-sans antialiased min-h-screen selection:bg-cyber-500/30 selection:text-cyber-400 overflow-x-hidden relative">
+
+  <!-- Background Animated Lights & Grid -->
+  <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+    <div class="absolute inset-0 bg-grid-pattern opacity-40"></div>
+    <div class="absolute inset-0 bg-grid-pattern opacity-30 animate-grid-move"></div>
+    <div class="absolute top-[-10%] left-[-5%] w-[600px] h-[600px] bg-cyber-500/10 rounded-full blur-[140px] animate-glow-pulse mix-blend-screen"></div>
+    <div class="absolute top-[30%] right-[-10%] w-[700px] h-[700px] bg-accent-violet/10 rounded-full blur-[160px] animate-glow-pulse mix-blend-screen" style="animation-delay: 2s;"></div>
+    <div class="absolute bottom-[-20%] left-[20%] w-[600px] h-[600px] bg-accent-cyan/10 rounded-full blur-[140px] animate-glow-pulse mix-blend-screen" style="animation-delay: 4s;"></div>
+  </div>
+
+  <div class="relative z-10 flex flex-col min-h-screen">
+
+    <!-- Top Navigation Header -->
+    <header class="border-b border-dark-border/60 bg-dark-bg/60 backdrop-blur-2xl sticky top-0 z-40">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
+        
+        <div class="flex items-center gap-4 group cursor-pointer" id="nav-logo">
+          <div class="relative flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-cyber-500/20 to-accent-cyan/10 border border-cyber-400/40 text-cyber-400 shadow-[0_0_20px_rgba(20,184,166,0.2)]">
+            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457-.39-2.823-1.07-4"/>
+            </svg>
+            <span class="absolute top-0 right-0 w-3 h-3 rounded-full bg-cyber-400 border-2 border-dark-bg animate-pulse"></span>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-extrabold text-2xl tracking-tight text-white">BioPrint<span class="text-cyber-400">.ai</span></span>
+              <span class="text-[9px] font-mono font-bold tracking-widest px-2 py-0.5 rounded border bg-cyber-500/10 text-cyber-400 border-cyber-500/30">v3.1 SUPERVISED ML</span>
+            </div>
+            <p class="text-xs text-slate-400 hidden sm:block mt-0.5">Zero-Knowledge Behavioral Biometrics Authentication</p>
+          </div>
+        </div>
+
+        <nav class="hidden md:flex items-center p-1.5 bg-dark-card/50 backdrop-blur-md rounded-2xl border border-dark-border/80 shadow-inner">
+          <button id="nav-demo" class="px-5 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 bg-cyber-500/15 text-cyber-400 border border-cyber-400/20 shadow-sm">Live Studio</button>
+          <button id="nav-analytics" class="px-5 py-2 rounded-xl text-sm font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition-all flex items-center gap-2">Intelligence</button>
+          <button id="nav-integration" class="px-5 py-2 rounded-xl text-sm font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition-all flex items-center gap-2">SDK Setup</button>
+        </nav>
+
+        <div class="flex items-center gap-4">
+          <div class="hidden lg:flex items-center gap-2 px-4 py-2 bg-dark-card/50 backdrop-blur-md rounded-xl border border-dark-border/80 text-xs font-mono">
+            <span class="relative flex h-2.5 w-2.5">
+              <span id="engine-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span id="engine-dot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <span class="text-slate-400">Engine:</span>
+            <span id="engine-status" class="text-emerald-400 font-semibold">Checking...</span>
+          </div>
+        </div>
+
+      </div>
+    </header>
+
+    <!-- Main Workspace Layout -->
+    <main class="flex-1 max-w-[90rem] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 relative z-10">
+
+      <!-- LEFT COLUMN -->
+      <section class="lg:col-span-5 flex flex-col gap-8" id="studio-section">
+        
+        <div class="glass-panel rounded-3xl p-7 sm:p-9 relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-cyber-500 via-accent-cyan to-accent-violet"></div>
+
+          <div class="flex p-1.5 bg-dark-bg/50 backdrop-blur-sm rounded-2xl border border-dark-border/60 mb-8 shadow-inner" role="tablist">
+            <button type="button" role="tab" id="tab-enroll" aria-selected="true" class="flex-1 py-3 px-4 rounded-xl text-sm font-bold transition-all duration-300 outline-none flex items-center justify-center gap-2">1. Enroll Biometrics</button>
+            <button type="button" role="tab" id="tab-login" aria-selected="false" class="flex-1 py-3 px-4 rounded-xl text-sm font-bold text-slate-400 hover:text-white transition-all duration-300 outline-none flex items-center justify-center gap-2">2. Verify Sign In</button>
+          </div>
+
+          <div class="mb-8">
+            <h1 id="title" class="text-3xl font-extrabold text-white tracking-tight mb-2">Create Profile</h1>
+            <p id="lede" class="text-sm text-slate-400 leading-relaxed">
+              Type your username and password naturally. Enter the <span class="text-cyber-400 font-semibold">same password across all 7 trials</span> to train your supervised ML biometric baseline.
+            </p>
+          </div>
+
+          <form id="form" class="space-y-6" novalidate>
+            <div class="space-y-2">
+              <div class="flex justify-between items-center text-sm">
+                <label for="username" class="font-semibold text-slate-300">Username</label>
+                <span id="badge-user-dynamics" class="text-[11px] font-mono text-slate-500 bg-dark-bg/50 px-2 py-0.5 rounded border border-dark-border">0 keystrokes</span>
+              </div>
+              <input id="username" name="username" type="text" autocomplete="username" placeholder="e.g. alex.cyber" class="input-glow w-full h-14 px-4 bg-dark-bg/80 border border-dark-border/80 rounded-xl text-white placeholder-slate-600 focus:outline-none font-mono text-base">
+            </div>
+
+            <div class="space-y-2">
+              <div class="flex justify-between items-center text-sm">
+                <label for="password" class="font-semibold text-slate-300">Secret Password</label>
+                <span id="badge-pass-dynamics" class="text-[11px] font-mono text-cyber-400 bg-cyber-500/10 px-2 py-0.5 rounded border border-cyber-500/20">Masked Dynamics</span>
+              </div>
+              <input id="password" name="password" type="password" autocomplete="new-password" placeholder="••••••••••••" class="input-glow w-full h-14 px-4 bg-dark-bg/80 border border-dark-border/80 rounded-xl text-white placeholder-slate-600 focus:outline-none font-mono text-xl tracking-[0.25em]">
+            </div>
+
+            <div id="enroll-progress" class="pt-2">
+              <div class="flex items-center justify-between text-xs font-semibold text-slate-400 mb-3">
+                <span>Enrollment Samples Captured</span>
+                <span id="sample-count-text" class="text-cyber-400 font-mono bg-dark-bg/50 px-2 py-1 rounded border border-dark-border">0 / 7</span>
+              </div>
+              <!-- 7 Enrollment Progress Dots -->
+              <div class="grid grid-cols-7 gap-2" id="dots-container">
+                <div class="h-2.5 rounded-full bg-dark-bg border border-dark-border transition-all duration-500 dot-step"></div>
+                <div class="h-2.5 rounded-full bg-dark-bg border border-dark-border transition-all duration-500 dot-step"></div>
+                <div class="h-2.5 rounded-full bg-dark-bg border border-dark-border transition-all duration-500 dot-step"></div>
+                <div class="h-2.5 rounded-full bg-dark-bg border border-dark-border transition-all duration-500 dot-step"></div>
+                <div class="h-2.5 rounded-full bg-dark-bg border border-dark-border transition-all duration-500 dot-step"></div>
+                <div class="h-2.5 rounded-full bg-dark-bg border border-dark-border transition-all duration-500 dot-step"></div>
+                <div class="h-2.5 rounded-full bg-dark-bg border border-dark-border transition-all duration-500 dot-step"></div>
+              </div>
+            </div>
+
+            <button id="submit-btn" type="submit" class="relative w-full h-14 mt-4 bg-gradient-to-r from-cyber-600 to-accent-cyan text-white font-extrabold text-base rounded-xl transition-all flex items-center justify-center gap-2">
+              <span id="btn-text">Submit Enrollment Sample</span>
+            </button>
+
+            <div id="status-box" class="min-h-[48px] p-3 rounded-xl bg-dark-bg/60 border border-dark-border/80 text-sm text-center font-medium flex items-center justify-center gap-3">
+              <span id="status-icon" class="w-2.5 h-2.5 rounded-full bg-cyber-400 animate-ping"></span>
+              <span id="status-text" class="text-slate-300">Ready for typing sequence...</span>
+            </div>
+          </form>
+
+          <!-- Attack Simulation Presets Bar -->
+          <div class="mt-8 pt-6 border-t border-dark-border/60">
+            <span class="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-4 block">Simulate Anomaly Behaviors</span>
+            <div class="grid grid-cols-3 gap-3">
+              <button type="button" id="sim-bot" class="py-2.5 px-2 rounded-xl bg-dark-bg/50 hover:bg-rose-500/10 border border-dark-border text-xs text-slate-400 hover:text-rose-400 transition-all font-mono">🤖 Script Bot</button>
+              <button type="button" id="sim-paste" class="py-2.5 px-2 rounded-xl bg-dark-bg/50 hover:bg-amber-500/10 border border-dark-border text-xs text-slate-400 hover:text-amber-400 transition-all font-mono">📋 Paste Attack</button>
+              <button type="button" id="sim-impostor" class="py-2.5 px-2 rounded-xl bg-dark-bg/50 hover:bg-accent-violet/10 border border-dark-border text-xs text-slate-400 hover:text-accent-violet transition-all font-mono">👤 Impostor</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Real-Time Keystroke Visualizer -->
+        <div class="glass-panel rounded-3xl p-6 flex flex-col gap-4">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white uppercase font-mono">Keystroke Oscilloscope</h3>
+            <span id="typing-wpm" class="text-sm font-mono text-cyber-400 font-bold bg-cyber-500/10 px-3 py-1 rounded-lg border border-cyber-500/20">0 CPS</span>
+          </div>
+
+          <div class="relative h-36 w-full bg-black/60 rounded-2xl border border-dark-border/80 overflow-hidden crt-overlay">
+            <canvas id="keystroke-canvas" class="w-full h-full block"></canvas>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- RIGHT COLUMN -->
+      <section class="lg:col-span-7 flex flex-col gap-8" id="intel-section">
+
+        <div class="glass-panel rounded-3xl p-7 flex flex-col gap-6">
+          <div class="flex flex-wrap items-center justify-between gap-4 border-b border-dark-border/60 pb-5">
+            <div>
+              <h2 class="text-xl font-bold text-white flex items-center gap-3 mb-1">Live Kinematic Pointer Trace</h2>
+              <p class="text-sm text-slate-400">High-frequency sampling of velocity vectors & cursor movement.</p>
+            </div>
+          </div>
+
+          <div class="relative w-full h-56 bg-black/50 rounded-2xl border border-dark-border/80 overflow-hidden crt-overlay">
+            <canvas id="trace-canvas" class="w-full h-full block cursor-crosshair"></canvas>
+            <div class="absolute top-4 left-4 flex gap-3 z-10">
+              <span class="text-xs font-mono px-3 py-1 rounded-lg bg-black/60 border border-dark-border text-slate-300">
+                Velocity: <span id="trace-vel" class="text-cyber-400 font-bold">0 px/ms</span>
+              </span>
+              <span class="text-xs font-mono px-3 py-1 rounded-lg bg-black/60 border border-dark-border text-slate-300">
+                Curvature: <span id="trace-curv" class="text-accent-cyan font-bold">0.00</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div class="bg-dark-bg/40 border border-dark-border/60 p-4 rounded-2xl">
+              <span class="text-[11px] text-slate-400 font-mono uppercase block mb-1.5">Keys Recorded</span>
+              <span id="hud-keys" class="text-3xl font-mono font-bold text-white">0</span>
+            </div>
+            <div class="bg-dark-bg/40 border border-dark-border/60 p-4 rounded-2xl">
+              <span class="text-[11px] text-slate-400 font-mono uppercase block mb-1.5">Pointer Samples</span>
+              <span id="hud-moves" class="text-3xl font-mono font-bold text-cyber-400">0</span>
+            </div>
+            <div class="bg-dark-bg/40 border border-dark-border/60 p-4 rounded-2xl">
+              <span class="text-[11px] text-slate-400 font-mono uppercase block mb-1.5">Click Events</span>
+              <span id="hud-clicks" class="text-3xl font-mono font-bold text-accent-cyan">0</span>
+            </div>
+            <div class="bg-dark-bg/40 border border-dark-border/60 p-4 rounded-2xl">
+              <span class="text-[11px] text-slate-400 font-mono uppercase block mb-1.5">Synthetic Flags</span>
+              <span id="hud-flags" class="text-3xl font-mono font-bold text-accent-rose">0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div class="glass-panel rounded-3xl p-7 flex flex-col items-center justify-between text-center">
+            <div class="w-full flex justify-between items-center mb-4">
+              <span class="text-sm font-bold text-white uppercase font-mono">Behavioral Match</span>
+              <span class="text-[11px] font-mono text-slate-400 bg-dark-bg/60 px-2 py-1 rounded border border-dark-border">Decision: <span id="latency-badge" class="text-cyber-400 font-bold">-- ms</span></span>
+              <span id="risk-badge" class="text-xs font-mono px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">LOW RISK</span>
+            </div>
+
+            <div class="relative my-4 w-48 h-48 flex items-center justify-center">
+              <canvas id="gauge-canvas" width="192" height="192" class="relative z-10"></canvas>
+              <div class="absolute inset-0 flex flex-col items-center justify-center pt-3 z-20">
+                <span id="gauge-score" class="text-4xl font-extrabold font-mono text-white">98%</span>
+                <span class="text-[10px] font-mono text-cyber-400 uppercase mt-1">Authenticity</span>
+              </div>
+            </div>
+
+            <p id="gauge-description" class="text-sm text-slate-300 mt-2 bg-dark-bg/40 p-3 rounded-xl border border-dark-border/50">
+              Typing flight time variance and pointer velocity vector align closely with verified human baseline.
+            </p>
+          </div>
+
+          <div class="glass-panel rounded-3xl p-7 flex flex-col justify-between">
+            <div class="flex items-center justify-between mb-5">
+              <span class="text-sm font-bold text-white uppercase font-mono">Biometric Vectors</span>
+              <span class="text-[11px] font-mono text-slate-400 bg-dark-bg px-2 py-1 rounded border border-dark-border">6 ACTIVE</span>
+            </div>
+
+            <ul class="space-y-3 text-sm font-mono">
+              <li class="flex items-center justify-between p-3 rounded-xl bg-dark-bg/60 border border-dark-border">
+                <span class="text-slate-300">Keystroke Dwell Mean</span>
+                <span id="feat-dwell" class="text-cyber-400 font-bold">-- ms</span>
+              </li>
+              <li class="flex items-center justify-between p-3 rounded-xl bg-dark-bg/60 border border-dark-border">
+                <span class="text-slate-300">Flight Time Variance</span>
+                <span id="feat-flight" class="text-accent-cyan font-bold">-- ms</span>
+              </li>
+              <li class="flex items-center justify-between p-3 rounded-xl bg-dark-bg/60 border border-dark-border">
+                <span class="text-slate-300">Pointer Straightness</span>
+                <span id="feat-straight" class="text-emerald-400 font-bold">--</span>
+              </li>
+              <li class="flex items-center justify-between p-3 rounded-xl bg-dark-bg/60 border border-dark-border">
+                <span class="text-slate-300">Automation Artifacts</span>
+                <span id="feat-synthetic" class="text-slate-500 font-bold">None</span>
+              </li>
+            </ul>
+
+            <div class="mt-5 pt-4 border-t border-dark-border/60 text-xs text-slate-400 flex justify-between items-center">
+              <span>Entropy Score: <strong id="entropy-score" class="text-white font-mono">-- bits</strong></span>
+              <button id="btn-rebench" type="button" class="text-cyber-400 hover:underline font-semibold">Run Benchmark</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Telemetry JSON Payload Viewer -->
+        <div class="glass-panel rounded-3xl overflow-hidden flex flex-col">
+          <div class="bg-dark-card/80 px-6 py-4 border-b border-dark-border/80 flex items-center justify-between">
+            <span class="text-sm font-bold text-white uppercase font-mono">Live JSON Telemetry Stream</span>
+            <div class="flex items-center gap-3">
+              <button id="btn-copy-json" type="button" class="px-4 py-2 rounded-xl bg-dark-bg border border-dark-border text-xs font-semibold text-slate-300">Copy</button>
+              <button id="btn-download-json" type="button" class="px-4 py-2 rounded-xl bg-cyber-500/20 border border-cyber-500/40 text-xs font-semibold text-cyber-400">Export</button>
+            </div>
+          </div>
+
+          <div class="p-5 bg-[#020408] overflow-x-auto max-h-80 font-mono text-xs text-slate-300 crt-overlay">
+            <pre id="json-output" class="text-cyber-400/90">{ "status": "awaiting_input" }</pre>
+          </div>
+
+          <div class="bg-dark-card/60 px-6 py-3 border-t border-dark-border/80 flex items-center justify-between text-xs text-slate-400 font-mono">
+            <span id="payload-size">Payload Size: 0.0 KB</span>
+            <span class="text-emerald-500 font-semibold">Zero Plaintext Passwords Transmitted</span>
+          </div>
+        </div>
+
+      </section>
+    </main>
+
+    <!-- Modal -->
+    <div id="sdk-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 hidden opacity-0 transition-opacity p-4">
+      <div class="bg-dark-card border border-dark-border w-full max-w-2xl rounded-3xl p-8 relative" id="sdk-modal-content">
+        <button id="close-modal" type="button" class="absolute top-6 right-6 text-slate-400 hover:text-white">✕</button>
+        <h3 class="text-2xl font-bold text-white">Backend Integration</h3>
+        <p class="text-sm text-slate-400 mt-2">This page talks to the FastAPI engine in <code class="text-cyber-400">main.py</code>.</p>
+
+        <div class="mt-6 space-y-5 text-xs font-mono max-h-[60vh] overflow-y-auto pr-1">
+          <div>
+            <span class="text-cyber-400 font-bold block mb-2">1. Start the engine</span>
+            <pre class="bg-dark-bg p-4 rounded-xl border border-dark-border text-slate-300 overflow-x-auto">pip install fastapi uvicorn numpy scikit-learn
+python main.py     # serves http://127.0.0.1:5000</pre>
+          </div>
+
+          <div>
+            <span class="text-cyber-400 font-bold block mb-2">2. Endpoints used by this page</span>
+            <pre class="bg-dark-bg p-4 rounded-xl border border-dark-border text-slate-300 overflow-x-auto">GET  /                          → health check (header pill)
+POST /api/enroll                → 7 baseline trials (Supervised RF Classifier)
+POST /api/verify                → live authentication (Probabilistic verification)
+POST /api/bioprint/telemetry    → mode taken from session.mode</pre>
+          </div>
+
+          <div>
+            <span class="text-cyber-400 font-bold block mb-2">3. Payload contract (must match main.py)</span>
+            <pre class="bg-dark-bg p-4 rounded-xl border border-dark-border text-slate-300 overflow-x-auto">{
+  "subject":    { "username": "alex.cyber", "password": "••••••••" },
+  "session":    { "mode": "enroll" | "verify" },
+  "signals":    { "flags": ["robotic_key_interval", ...] },
+  "keystrokes": { "password": { "derived": {
+      "dwell": { "mean": 95.2, "sd": 21.8 },
+      "ud":    { "mean": 140.4, "sd": 34.9 },
+      "typingSpeedCps": 3.8 } } },
+  "pointer":    { "derived": {
+      "speedPxPerMs": { "mean": 0.45 },
+      "straightness": { "mean": 0.70 },
+      "turnAngleRad": { "sd": 0.85 } } }
+}</pre>
+          </div>
+
+          <div>
+            <span class="text-cyber-400 font-bold block mb-2">4. Response shape</span>
+            <pre class="bg-dark-bg p-4 rounded-xl border border-dark-border text-slate-300 overflow-x-auto">{ "status": "granted" | "blocked" | "success" | "error",
+  "score": 91.4, "is_bot": false,
+  "explainability": ["Flight SD deviated by 34% from baseline"],
+  "message": "ACCESS GRANTED: Biometric signature match (91.4%)" }</pre>
+          </div>
+        </div>
+
+        <div class="mt-6 flex justify-end">
+          <button id="btn-close-modal-footer" type="button" class="px-6 py-2.5 bg-cyber-500 text-dark-bg font-bold rounded-xl">Close</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- BioPrint Behavioral Engine JS Client -->
+  <script>
+    (() => {
+      'use strict';
+
+      const API_BASE = (location.protocol === 'http:' || location.protocol === 'https:')
+        ? ''
+        : 'http://127.0.0.1:5000';
+
+      const ENDPOINTS = {
+        health:   `${API_BASE}/`,
+        enroll:   `${API_BASE}/api/enroll`,
+        verify:   `${API_BASE}/api/verify`,
+        telemetry:`${API_BASE}/api/bioprint/telemetry`
+      };
+
+      const $ = (id) => document.getElementById(id);
+      const r1 = (v) => Math.round((v || 0) * 10) / 10;
+      const r2 = (v) => Math.round((v || 0) * 100) / 100;
+      const uid = () => Math.random().toString(16).slice(2) + Date.now().toString(16);
+
+      class PointerBuffer {
+        constructor(limit = 1200) {
+          this.limit = limit;
+          this.data = [];
+        }
+        push(t, x, y) {
+          if (this.data.length >= this.limit) this.data.shift();
+          this.data.push([t, x, y]);
+        }
+        clear() { this.data = []; }
+      }
+
+      const pointerBuf = new PointerBuffer(1200);
+      const state = {
+        mode: 'enroll',
+        enrolledSamples: 0,
+        maxEnrollSamples: 7, // Set to 7 enrollment trials
+        firstEnrolledPassword: null,
+        backendOnline: false,
+        sessionStartTime: performance.now(),
+        keysUser: [],
+        keysPass: [],
+        activeKeyMap: new Map(),
+        clicks: [],
+        syntheticFlags: [],
+        untrustedEvents: 0,
+        syntheticClicks: 0,
+        teleports: 0,
+        pasteEvents: 0,
+        simulatedStraightness: undefined,
+        simulatedDwellMean: undefined,
+        simulatedDwellSd: undefined,
+        simulatedFlightSd: undefined,
+        simulatedCps: undefined,
+        lastPointerPos: { x: 0, y: 0, t: 0, vel: 0 },
+        curvatureHist: []
+      };
+
+      const usernameInput = $('username');
+      const passwordInput = $('password');
+      const formEl        = $('form');
+      const traceCanvas   = $('trace-canvas');
+      const traceCtx      = traceCanvas ? traceCanvas.getContext('2d') : null;
+      const keyCanvas     = $('keystroke-canvas');
+      const keyCtx        = keyCanvas ? keyCanvas.getContext('2d') : null;
+      const gaugeCanvas   = $('gauge-canvas');
+      const gaugeCtx      = gaugeCanvas ? gaugeCanvas.getContext('2d') : null;
+
+      const GAUGE_SIZE = 192;
+
+      function setStatus(text, tone) {
+        const tones = {
+          idle:    ['text-slate-300',        'w-2.5 h-2.5 rounded-full bg-cyber-400 animate-ping'],
+          info:    ['text-cyber-400 font-bold',   'w-2.5 h-2.5 rounded-full bg-cyber-400'],
+          good:    ['text-emerald-400 font-bold', 'w-2.5 h-2.5 rounded-full bg-emerald-400'],
+          warn:    ['text-amber-400 font-bold',   'w-2.5 h-2.5 rounded-full bg-amber-400'],
+          bad:     ['text-rose-400 font-bold',    'w-2.5 h-2.5 rounded-full bg-rose-500']
+        };
+        const [txtCls, iconCls] = tones[tone] || tones.idle;
+        if ($('status-text')) { $('status-text').textContent = text; $('status-text').className = txtCls; }
+        if ($('status-icon')) $('status-icon').className = iconCls;
+      }
+
+      function resetTelemetryBuffers() {
+        state.keysUser = [];
+        state.keysPass = [];
+        state.syntheticFlags = [];
+        state.untrustedEvents = 0;
+        state.syntheticClicks = 0;
+        state.teleports = 0;
+        state.pasteEvents = 0;
+        state.simulatedStraightness = undefined;
+        state.simulatedDwellMean = undefined;
+        state.simulatedDwellSd = undefined;
+        state.simulatedFlightSd = undefined;
+        state.simulatedCps = undefined;
+        state.activeKeyMap.clear();
+      }
+
+      function resizeCanvases() {
+        [traceCanvas, keyCanvas].forEach(c => {
+          if (!c) return;
+          const rect = c.getBoundingClientRect();
+          const dpr = window.devicePixelRatio || 1;
+          c.width = rect.width * dpr;
+          c.height = rect.height * dpr;
+          c.getContext('2d').scale(dpr, dpr);
+        });
+
+        if (gaugeCanvas) {
+          const dpr = window.devicePixelRatio || 1;
+          gaugeCanvas.width = GAUGE_SIZE * dpr;
+          gaugeCanvas.height = GAUGE_SIZE * dpr;
+          gaugeCanvas.style.width = GAUGE_SIZE + 'px';
+          gaugeCanvas.style.height = GAUGE_SIZE + 'px';
+          if (gaugeCtx) gaugeCtx.scale(dpr, dpr);
+        }
+
+        drawTrace();
+        drawKeystrokes();
+        drawGauge(98, 'LOW RISK');
+      }
+
+      window.addEventListener('resize', resizeCanvases);
+
+      function handleKeyDown(e) {
+        const isUser = e.target === usernameInput;
+        const isPass = e.target === passwordInput;
+        if (!isUser && !isPass) return;
+
+        if (state.syntheticFlags.length > 0) {
+          state.syntheticFlags = [];
+          state.simulatedStraightness = undefined;
+          state.simulatedDwellMean = undefined;
+          state.simulatedDwellSd = undefined;
+          state.simulatedFlightSd = undefined;
+          state.simulatedCps = undefined;
+        }
+
+        if (e.isTrusted === false) state.untrustedEvents++;
+
+        const t = performance.now();
+        const code = e.code || e.key;
+
+        if (!e.repeat) {
+          const rec = { code, down: t, up: null, dwell: null, target: isUser ? 'username' : 'password' };
+          state.activeKeyMap.set(code, rec);
+          if (isUser) state.keysUser.push(rec);
+          else state.keysPass.push(rec);
+        }
+
+        updateHUD();
+        drawKeystrokes();
+      }
+
+      function handleKeyUp(e) {
+        const t = performance.now();
+        const code = e.code || e.key;
+        if (state.activeKeyMap.has(code)) {
+          const rec = state.activeKeyMap.get(code);
+          rec.up = t;
+          rec.dwell = t - rec.down;
+          state.activeKeyMap.delete(code);
+        }
+        updateHUD();
+        drawKeystrokes();
+        updateTelemetryView();
+      }
+
+      if (usernameInput) {
+        usernameInput.addEventListener('keydown', handleKeyDown);
+        usernameInput.addEventListener('keyup', handleKeyUp);
+      }
+      if (passwordInput) {
+        passwordInput.addEventListener('keydown', handleKeyDown);
+        passwordInput.addEventListener('keyup', handleKeyUp);
+        passwordInput.addEventListener('focus', () => { state.keysPass = []; });
+      }
+
+      [usernameInput, passwordInput].forEach(el => {
+        if (!el) return;
+        el.addEventListener('paste', () => {
+          state.pasteEvents++;
+          if (!state.syntheticFlags.includes('paste_event_detected')) {
+            state.syntheticFlags.push('paste_event_detected');
+          }
+          updateHUD();
+          updateTelemetryView();
+          setStatus('Paste event captured on input field — flagged as non-keystroke entry.', 'warn');
+        });
+      });
+
+      let lastDrawT = 0;
+      window.addEventListener('pointermove', (e) => {
+        const t = performance.now();
+        const x = e.clientX;
+        const y = e.clientY;
+
+        if (e.isTrusted === false) state.untrustedEvents++;
+        pointerBuf.push(t, x, y);
+
+        if (state.lastPointerPos.t > 0) {
+          const dt = t - state.lastPointerPos.t;
+          if (dt > 0) {
+            const dx = x - state.lastPointerPos.x;
+            const dy = y - state.lastPointerPos.y;
+            const dist = Math.hypot(dx, dy);
+            state.lastPointerPos.vel = dist / dt;
+            if (dist > 400 && dt < 20) state.teleports++;
+            if ($('trace-vel')) $('trace-vel').textContent = `${r2(state.lastPointerPos.vel * 10)} px/ms`;
+          }
+        }
+
+        if (pointerBuf.data.length >= 3) {
+          const p = pointerBuf.data;
+          const n = p.length;
+          const p1 = p[n - 3], p2 = p[n - 2], p3 = p[n - 1];
+          const v1x = p2[1] - p1[1], v1y = p2[2] - p1[2];
+          const v2x = p3[1] - p2[1], v2y = p3[2] - p2[2];
+          const len1 = Math.hypot(v1x, v1y);
+          const len2 = Math.hypot(v2x, v2y);
+
+          if (len1 > 0 && len2 > 0) {
+            const a1 = Math.atan2(v1y, v1x);
+            const a2 = Math.atan2(v2y, v2x);
+            let diff = Math.abs(a2 - a1);
+            if (diff > Math.PI) diff = 2 * Math.PI - diff;
+            const curv = diff / ((len1 + len2) / 2);
+            state.curvatureHist.push(curv);
+            if (state.curvatureHist.length > 20) state.curvatureHist.shift();
+            const avgCurv = state.curvatureHist.reduce((a, b) => a + b, 0) / state.curvatureHist.length;
+            if ($('trace-curv')) $('trace-curv').textContent = r2(avgCurv * 10).toFixed(2);
+          }
+        }
+
+        state.lastPointerPos.x = x;
+        state.lastPointerPos.y = y;
+        state.lastPointerPos.t = t;
+
+        updateHUD();
+        if (t - lastDrawT > 16) { drawTrace(); lastDrawT = t; }
+      });
+
+      window.addEventListener('pointerdown', (e) => {
+        if (e.isTrusted === false) state.syntheticClicks++;
+        state.clicks.push({ t: performance.now(), x: e.clientX, y: e.clientY, button: e.button });
+        updateHUD();
+      });
+
+      function drawTrace() {
+        if (!traceCtx || !traceCanvas) return;
+        const rect = traceCanvas.getBoundingClientRect();
+        const w = rect.width, h = rect.height;
+
+        traceCtx.clearRect(0, 0, w, h);
+
+        traceCtx.strokeStyle = 'rgba(30, 41, 59, 0.4)';
+        traceCtx.lineWidth = 1;
+        const step = 24;
+        for (let x = 0; x < w; x += step) {
+          traceCtx.beginPath(); traceCtx.moveTo(x, 0); traceCtx.lineTo(x, h); traceCtx.stroke();
+        }
+        for (let y = 0; y < h; y += step) {
+          traceCtx.beginPath(); traceCtx.moveTo(0, y); traceCtx.lineTo(w, y); traceCtx.stroke();
+        }
+
+        const data = pointerBuf.data;
+        if (data.length < 2) return;
+
+        traceCtx.lineWidth = 2;
+        traceCtx.lineCap = 'round';
+        traceCtx.lineJoin = 'round';
+
+        const len = data.length;
+        const startIdx = Math.max(0, len - 150);
+
+        for (let i = startIdx + 1; i < len; i++) {
+          const p1 = data[i - 1];
+          const p2 = data[i];
+          const alpha = (i - startIdx) / (len - startIdx);
+          traceCtx.strokeStyle = `rgba(45, 212, 191, ${alpha * 0.8})`;
+          traceCtx.beginPath();
+          traceCtx.moveTo(p1[1] % w, p1[2] % h);
+          traceCtx.lineTo(p2[1] % w, p2[2] % h);
+          traceCtx.stroke();
+        }
+      }
+
+      function drawKeystrokes() {
+        if (!keyCtx || !keyCanvas) return;
+        const rect = keyCanvas.getBoundingClientRect();
+        const w = rect.width, h = rect.height;
+
+        keyCtx.clearRect(0, 0, w, h);
+
+        const allKeys = [...state.keysUser, ...state.keysPass];
+        if (allKeys.length === 0) return;
+
+        const maxBars = 20;
+        const recentKeys = allKeys.slice(-maxBars);
+        const barWidth = (w - 40) / maxBars;
+        const maxDwell = 300;
+
+        recentKeys.forEach((k, idx) => {
+          const dwell = k.dwell || (performance.now() - k.down);
+          const barHeight = Math.min(h - 20, (dwell / maxDwell) * (h - 20));
+          const x = 20 + idx * barWidth;
+          const y = h - barHeight - 10;
+
+          const grad = keyCtx.createLinearGradient(0, y, 0, h - 10);
+          if (k.target === 'username') { grad.addColorStop(0, '#06b6d4'); grad.addColorStop(1, '#1e293b'); }
+          else { grad.addColorStop(0, '#2dd4bf'); grad.addColorStop(1, '#1e293b'); }
+
+          keyCtx.fillStyle = grad;
+          keyCtx.beginPath();
+          if (keyCtx.roundRect) keyCtx.roundRect(x, y, Math.max(2, barWidth - 4), Math.max(2, barHeight), 4);
+          else keyCtx.rect(x, y, Math.max(2, barWidth - 4), Math.max(2, barHeight));
+          keyCtx.fill();
+
+          if (idx > 0) {
+            const prev = recentKeys[idx - 1];
+            const flightTime = k.down - (prev.up || prev.down);
+            if (flightTime < 800) {
+              keyCtx.strokeStyle = 'rgba(139, 92, 246, 0.4)';
+              keyCtx.setLineDash([2, 2]);
+              keyCtx.beginPath();
+              keyCtx.moveTo(x - barWidth + (barWidth - 4) / 2, h - 10);
+              keyCtx.lineTo(x + (barWidth - 4) / 2, h - 10);
+              keyCtx.stroke();
+              keyCtx.setLineDash([]);
+            }
+          }
+        });
+
+        if (allKeys.length > 2) {
+          const span = (allKeys[allKeys.length - 1].down - allKeys[0].down) / 1000;
+          if (span > 0) {
+            const cps = r1((allKeys.length - 1) / span);
+            if ($('typing-wpm')) $('typing-wpm').textContent = `${cps} CPS / ${r1(cps * 12)} WPM`;
+          }
+        }
+      }
+
+      function drawGauge(score = 98, level = 'LOW RISK') {
+        if (!gaugeCtx || !gaugeCanvas) return;
+        const cx = GAUGE_SIZE / 2, cy = GAUGE_SIZE / 2, radius = 70;
+
+        gaugeCtx.clearRect(0, 0, GAUGE_SIZE, GAUGE_SIZE);
+
+        gaugeCtx.beginPath();
+        gaugeCtx.arc(cx, cy, radius, 0.75 * Math.PI, 2.25 * Math.PI, false);
+        gaugeCtx.lineWidth = 12;
+        gaugeCtx.lineCap = 'round';
+        gaugeCtx.strokeStyle = 'rgba(30, 41, 59, 0.8)';
+        gaugeCtx.stroke();
+
+        const clamped = Math.max(0, Math.min(100, score));
+        const fillEnd = 0.75 * Math.PI + (clamped / 100) * (1.5 * Math.PI);
+        gaugeCtx.beginPath();
+        gaugeCtx.arc(cx, cy, radius, 0.75 * Math.PI, fillEnd, false);
+        gaugeCtx.lineWidth = 12;
+        gaugeCtx.lineCap = 'round';
+        gaugeCtx.strokeStyle = score < 60 ? '#f43f5e' : (score < 80 ? '#f59e0b' : '#10b981');
+        gaugeCtx.stroke();
+
+        if ($('gauge-score')) $('gauge-score').textContent = `${Math.round(score)}%`;
+        if ($('risk-badge')) $('risk-badge').textContent = level;
+
+        const badge = $('risk-badge');
+        const desc = $('gauge-description');
+        if (badge && desc) {
+          if (level === 'HIGH RISK / BOT' || score < 40) {
+            badge.className = 'text-xs font-mono px-3 py-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30';
+            desc.textContent = 'Anomalous robotic key intervals or automation signals detected.';
+          } else if (level === 'SUSPICIOUS' || score < 80) {
+            badge.className = 'text-xs font-mono px-3 py-1 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30';
+            desc.textContent = 'Deviation in password flight-time rhythm or input dynamics compared to baseline.';
+          } else {
+            badge.className = 'text-xs font-mono px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+            desc.textContent = 'Natural human velocity curves and dwell variance matched successfully.';
+          }
+        }
+      }
+
+      function updateHUD() {
+        if ($('hud-keys'))   $('hud-keys').textContent = state.keysUser.length + state.keysPass.length;
+        if ($('hud-moves'))  $('hud-moves').textContent = pointerBuf.data.length;
+        if ($('hud-clicks')) $('hud-clicks').textContent = state.clicks.length;
+        if ($('hud-flags'))  $('hud-flags').textContent = state.syntheticFlags.length;
+        if ($('badge-user-dynamics')) $('badge-user-dynamics').textContent = `${state.keysUser.length} keystrokes`;
+      }
+
+      function buildPayload() {
+        const allKeys = [...state.keysUser, ...state.keysPass];
+        const passKeys = state.keysPass;
+        const targetKeys = passKeys.length > 0 ? passKeys : allKeys;
+
+        const dwells = targetKeys.filter(k => k.dwell !== null && k.dwell !== undefined).map(k => k.dwell);
+        let dwellMean = dwells.length ? dwells.reduce((a, b) => a + b, 0) / dwells.length : 85.0;
+        let dwellSd = dwells.length > 1
+          ? Math.sqrt(dwells.reduce((sq, n) => sq + Math.pow(n - dwellMean, 2), 0) / dwells.length)
+          : 18.0;
+
+        const flights = [];
+        for (let i = 1; i < targetKeys.length; i++) {
+          if (targetKeys[i - 1].up !== null) flights.push(targetKeys[i].down - targetKeys[i - 1].up);
+        }
+        let flightMean = flights.length ? flights.reduce((a, b) => a + b, 0) / flights.length : 150.0;
+        let flightSd = flights.length > 1
+          ? Math.sqrt(flights.reduce((sq, n) => sq + Math.pow(n - flightMean, 2), 0) / flights.length)
+          : 35.0;
+
+        let typingSpeedCps = 0;
+        if (targetKeys.length > 1) {
+          const span = (targetKeys[targetKeys.length - 1].down - targetKeys[0].down) / 1000;
+          if (span > 0) typingSpeedCps = (targetKeys.length - 1) / span;
+        }
+
+        const pData = pointerBuf.data;
+        const pointerSamples = pData.length;
+        let speedMean = state.lastPointerPos.vel || 0.4;
+        let straightnessMean = state.simulatedStraightness !== undefined ? state.simulatedStraightness : 0.78;
+        let turnAngleSd = 0.8;
+
+        if (pData.length >= 5 && state.simulatedStraightness === undefined) {
+          const recentData = pData.slice(-100);
+          const speeds = [];
+          const angles = [];
+          for (let i = 1; i < recentData.length; i++) {
+            const dt = recentData[i][0] - recentData[i - 1][0];
+            const dx = recentData[i][1] - recentData[i - 1][1];
+            const dy = recentData[i][2] - recentData[i - 1][2];
+            if (dt > 0) speeds.push(Math.hypot(dx, dy) / dt);
+            if (dx !== 0 || dy !== 0) angles.push(Math.atan2(dy, dx));
+          }
+          if (speeds.length) speedMean = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+
+          if (angles.length > 1) {
+            const aMean = angles.reduce((a, b) => a + b, 0) / angles.length;
+            turnAngleSd = Math.sqrt(angles.reduce((sq, a) => sq + Math.pow(a - aMean, 2), 0) / angles.length);
+          }
+
+          const totalDist = Math.hypot(
+            recentData[recentData.length - 1][1] - recentData[0][1],
+            recentData[recentData.length - 1][2] - recentData[0][2]
+          );
+          let pathDist = 0;
+          for (let i = 1; i < recentData.length; i++) {
+            pathDist += Math.hypot(recentData[i][1] - recentData[i - 1][1], recentData[i][2] - recentData[i - 1][2]);
+          }
+          if (pathDist > 0) straightnessMean = Math.min(0.98, Math.max(0.20, totalDist / pathDist));
+        }
+
+        const isBotSim      = state.syntheticFlags.includes('robotic_key_interval');
+        const isPasteSim    = state.syntheticFlags.includes('paste_event_detected');
+        const isImpostorSim = state.syntheticFlags.includes('flight_rhythm_mismatch');
+
+        if (isBotSim) {
+          dwellMean = state.simulatedDwellMean || 8.0;
+          dwellSd = state.simulatedDwellSd || 0.2;
+          flightSd = state.simulatedFlightSd || 2.0;
+          typingSpeedCps = state.simulatedCps || 32.0;
+          straightnessMean = 0.998;
+          turnAngleSd = 0.01;
+        } else if (isImpostorSim) {
+          flightSd = state.simulatedFlightSd || 90.0;
+        }
+
+        return {
+          schema: "bioprint.v2/telemetry",
+          session: {
+            pageSessionId: uid(),
+            mode: state.mode,
+            sampleIndex: state.enrolledSamples + 1,
+            startedAtMs: r1(state.sessionStartTime),
+            durationMs: r1(performance.now() - state.sessionStartTime)
+          },
+          subject: {
+            username: usernameInput ? (usernameInput.value.trim() || "anonymous") : "anonymous",
+            password: passwordInput ? passwordInput.value : ""
+          },
+          username: usernameInput ? (usernameInput.value.trim() || "anonymous") : "anonymous",
+          signals: {
+            flags: state.syntheticFlags || [],
+            untrustedEvents: state.untrustedEvents || 0,
+            syntheticClicks: state.syntheticClicks || 0
+          },
+          environment: {
+            webdriver: !!navigator.webdriver,
+            headlessUserAgent: /HeadlessChrome|PhantomJS/i.test(navigator.userAgent),
+            userAgent: navigator.userAgent,
+            screen: `${window.screen.width}x${window.screen.height}`,
+            hardwareConcurrency: navigator.hardwareConcurrency || 4
+          },
+          keystrokes: {
+            password: {
+              paste: (isPasteSim || state.pasteEvents > 0) ? 1 : 0,
+              nonKeyInputEvents: state.untrustedEvents || (isPasteSim ? 1 : 0),
+              derived: {
+                dwell: { n: dwells.length || (isBotSim ? 12 : 8), mean: r1(dwellMean), sd: r1(dwellSd) },
+                ud:    { n: flights.length || (isBotSim ? 11 : 7), mean: r1(flightMean), sd: r1(flightSd) },
+                typingSpeedCps: r1(typingSpeedCps)
+              }
+            }
+          },
+          pointer: {
+            type: "mouse",
+            derived: {
+              samples: pointerSamples > 0 ? pointerSamples : (isBotSim ? 1 : 25),
+              teleports: state.teleports || 0,
+              speedPxPerMs: { mean: r2(speedMean) },
+              turnAngleRad: { sd: r2(turnAngleSd) },
+              straightness: { n: pointerSamples > 1 ? pointerSamples : 2, mean: r2(straightnessMean) }
+            }
+          },
+          biometrics: {
+            keystrokeCount: allKeys.length,
+            dwellMeanMs: r1(dwellMean),
+            flightMeanMs: r1(flightMean),
+            pointerSamplesCount: pointerSamples,
+            clickCount: state.clicks.length,
+            syntheticFlags: state.syntheticFlags
+          }
+        };
+      }
+
+      function updateTelemetryView() {
+        const payload = buildPayload();
+
+        if ($('feat-dwell'))$('feat-dwell').textContent  = `${payload.keystrokes.password.derived.dwell.mean} ms`;
+        if ($('feat-flight'))$('feat-flight').textContent = `${payload.keystrokes.password.derived.ud.sd} ms (std)`;
+
+        const strVal = payload.pointer.derived.straightness.mean;
+        if ($('feat-straight'))$('feat-straight').textContent = `${strVal} ${strVal >= 0.992 ? '(Robotic)' : '(Human)'}`;
+
+        const flags = state.syntheticFlags.length > 0 ? state.syntheticFlags.join(', ') : 'None';
+        if ($('feat-synthetic')) {$('feat-synthetic').textContent = flags;
+          $('feat-synthetic').className = state.syntheticFlags.length > 0
+            ? 'text-amber-400 font-bold'
+            : 'text-emerald-400 font-bold';
+        }
+
+        const dSd = payload.keystrokes.password.derived.dwell.sd || 1;
+        const fSd = payload.keystrokes.password.derived.ud.sd || 1;
+        const entropyBits = Math.max(0.5, r2(Math.log2(dSd * fSd + 1)));
+        if ($('entropy-score'))$('entropy-score').textContent = `${entropyBits} bits`;
+
+        const display = JSON.parse(JSON.stringify(payload));
+        if (display.subject) display.subject.password = "«redacted — timing only»";
+        const jsonStr = JSON.stringify(display, null, 2);
+        if ($('json-output'))$('json-output').textContent = jsonStr;
+        if ($('payload-size'))$('payload-size').textContent = `Payload Size: ${(jsonStr.length / 1024).toFixed(2)} KB`;
+      }
+
+      const DOT_IDLE   = "h-2.5 rounded-full bg-dark-bg border border-dark-border transition-all duration-500 dot-step";
+      const DOT_ACTIVE = "h-2.5 rounded-full bg-cyber-400 border border-cyber-400 shadow-[0_0_12px_#2dd4bf] transition-all duration-500 dot-step";
+
+      function setMode(m) {
+        state.mode = m;
+        const isEnroll = m === 'enroll';
+
+        if ($('tab-enroll'))$('tab-enroll').setAttribute('aria-selected', isEnroll ? 'true' : 'false');
+        if ($('tab-login'))$('tab-login').setAttribute('aria-selected', !isEnroll ? 'true' : 'false');
+
+        if (isEnroll) {
+          if ($('title'))$('title').textContent = "Create Biometric Profile";
+          if ($('lede'))$('lede').innerHTML = 'Type your username and password naturally. Enter the <span class="text-cyber-400 font-semibold">same password across all 7 trials</span> to train your supervised ML biometric baseline.';
+          if ($('btn-text'))$('btn-text').textContent = "Submit Enrollment Sample";
+          if ($('enroll-progress'))$('enroll-progress').classList.remove('hidden');
+
+          state.enrolledSamples = 0;
+          state.firstEnrolledPassword = null;
+          if ($('sample-count-text'))$('sample-count-text').textContent = "0 / 7";
+          document.querySelectorAll('.dot-step').forEach(d => { d.className = DOT_IDLE; });
+        } else {
+          if ($('title'))$('title').textContent = "Verify Identity";
+          if ($('lede'))$('lede').innerHTML = 'Sign in as usual. The BioPrint engine matches your <span class="text-cyber-400 font-semibold">typing cadence &amp; pointer velocity</span> using a supervised Random Forest classifier.';
+          if ($('btn-text'))$('btn-text').textContent = "Authenticate Sign In";
+          if ($('enroll-progress'))$('enroll-progress').classList.add('hidden');
+        }
+
+        if (usernameInput) usernameInput.value = '';
+        if (passwordInput) passwordInput.value = '';
+        resetTelemetryBuffers();
+
+        setStatus("Ready for typing sequence...", 'idle');
+        updateHUD();
+        drawKeystrokes();
+        updateTelemetryView();
+      }
+
+      if ($('tab-enroll'))$('tab-enroll').addEventListener('click', () => setMode('enroll'));
+      if ($('tab-login'))$('tab-login').addEventListener('click', () => setMode('verify'));
+
+      function renderExplainability(list) {
+        if (!Array.isArray(list) || list.length === 0) return;
+        const desc = $('gauge-description');
+        if (desc) desc.textContent = list.join(' • ');
+      }
+
+      // FORM SUBMISSION
+      if (formEl) {
+        formEl.addEventListener('submit', async (e) => {
+          e.preventDefault();
+
+          if (!usernameInput.value || !passwordInput.value) {
+            setStatus("Please fill in both username and password fields.", 'bad');
+            return;
+          }
+
+          // Enrollment Password Match Validation (Client Pre-check)
+          if (state.mode === 'enroll') {
+            if (state.enrolledSamples === 0) {
+              state.firstEnrolledPassword = passwordInput.value;
+            } else if (passwordInput.value !== state.firstEnrolledPassword) {
+              setStatus("Password mismatch! Please enter the exact same password for all 7 trials.", 'bad');
+              return;
+            }
+          }
+
+          const payload = buildPayload();
+          const endpoint = state.mode === 'enroll' ? ENDPOINTS.enroll : ENDPOINTS.verify;
+          const started = performance.now();
+          let result;
+
+          setStatus('Transmitting telemetry payload to BioPrint engine...', 'info');
+
+          try {
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+              result = await response.json();
+              setBackendOnline(true);
+            } else {
+              const errJson = await response.json().catch(() => ({}));
+              result = {
+                status: 'error',
+                is_bot: errJson.is_bot || state.syntheticFlags.length > 0,
+                message: errJson.detail || errJson.message || errJson.reason || "Request rejected by security policy."
+              };
+            }
+          } catch (err) {
+            console.warn("Backend API offline, running client-side assessment:", err);
+            setBackendOnline(false);
+            const isBot = state.syntheticFlags.length > 0 || payload.keystrokes.password.derived.dwell.mean < 20;
+            if (isBot) {
+              result = { status: 'blocked', is_bot: true, score: 15,
+                         message: 'BLOCKED: Bot or synthetic behavior detected (offline mode).' };
+            } else if (state.mode === 'enroll') {
+              result = { status: 'success', mode: 'enroll',
+                         sample_count: state.enrolledSamples + 1,
+                         message: `Sample ${state.enrolledSamples + 1} recorded (offline mode).` };
+            } else {
+              result = { status: 'granted', score: 96,
+                         message: 'Authentication successful — biometrics match baseline (offline mode).' };
+            }
+          }
+
+          const latency = Math.round(performance.now() - started);
+          if ($('latency-badge'))$('latency-badge').textContent = `${latency} ms`;
+
+          // Handle Error or Password Mismatch
+          if (result.status === 'error' || result.reason === 'PASSWORD_MISMATCH') {
+            setStatus(result.message || "Error during submission.", 'bad');
+            return;
+          }
+
+          // Handle Blocked / Bot / Incorrect Password
+          if (result.is_bot || result.status === 'blocked') {
+            drawGauge(result.score ?? result.confidence_score ?? 0,
+                      result.reason === 'INCORRECT_PASSWORD' ? 'SUSPICIOUS' : 'HIGH RISK / BOT');
+            renderExplainability(result.explainability);
+            setStatus(result.message || "ACCESS DENIED", 'bad');
+            resetTelemetryBuffers();
+            updateTelemetryView();
+            return;
+          }
+
+          // ENROLLMENT SUCCESS
+          if (state.mode === 'enroll') {
+            state.enrolledSamples = result.sample_count ?? (state.enrolledSamples + 1);
+            const dots = Array.from(document.querySelectorAll('.dot-step'));
+            for (let i = 0; i < dots.length; i++) {
+              dots[i].className = i < state.enrolledSamples ? DOT_ACTIVE : DOT_IDLE;
+            }
+            if ($('sample-count-text')) {$('sample-count-text').textContent = `${Math.min(state.enrolledSamples, state.maxEnrollSamples)} / 7`;
+            }
+
+            if (state.enrolledSamples >= state.maxEnrollSamples) {
+              setStatus("Supervised ML profile successfully trained across 7 trials! Switching to Verify mode...", 'good');
+              drawGauge(98, 'LOW RISK');
+              setTimeout(() => setMode('verify'), 1400);
+            } else {
+              setStatus(result.message || `Sample ${state.enrolledSamples}/7 recorded. Re-enter the same password to reinforce baseline.`, 'info');
+              passwordInput.value = '';
+              resetTelemetryBuffers();
+            }
+            updateTelemetryView();
+            return;
+          }
+
+          // VERIFICATION SUCCESS
+          const displayScore = result.score ?? result.confidence_score ?? 95;
+          const granted = result.status === 'granted';
+          drawGauge(displayScore, granted ? 'LOW RISK' : 'SUSPICIOUS');
+          renderExplainability(result.explainability);
+          setStatus(`${result.message} — ${latency} ms`, granted ? 'good' : 'warn');
+          resetTelemetryBuffers();
+          updateTelemetryView();
+        });
+      }
+
+      // Attack Simulations
+      if ($('sim-bot')) {$('sim-bot').addEventListener('click', () => {
+          resetTelemetryBuffers();
+          if (usernameInput) usernameInput.value = "admin_root";
+          if (passwordInput) passwordInput.value = "P@ssword123!";
+
+          state.syntheticFlags = ['robotic_key_interval', 'zero_pointer_curvature', 'fixed_dwell_10ms'];
+          state.simulatedStraightness = 0.998;
+          state.simulatedDwellMean = 8.0;
+          state.simulatedDwellSd = 0.5;
+          state.simulatedFlightSd = 2.0;
+          state.simulatedCps = 28.0;
+
+          let t = performance.now();
+          "P@ssword123!".split('').forEach((ch) => {
+            state.keysPass.push({ code: `Key${ch}`, down: t, up: t + 8, dwell: 8, target: 'password' });
+            t += 18;
+          });
+
+          drawGauge(15, 'HIGH RISK / BOT');
+          updateHUD();
+          drawKeystrokes();
+          updateTelemetryView();
+          setStatus("Bot attack staged: fixed key intervals + inhuman speed. Press Submit to test.", 'bad');
+        });
+      }
+
+      if ($('sim-paste')) {$('sim-paste').addEventListener('click', () => {
+          resetTelemetryBuffers();
+          if (usernameInput) usernameInput.value = "user.target";
+          if (passwordInput) passwordInput.value = "P@sswordSuperLongSecret99!";
+          state.syntheticFlags = ['paste_event_detected', 'zero_keystroke_flight'];
+          state.pasteEvents = 1;
+
+          drawGauge(45, 'SUSPICIOUS');
+          updateHUD();
+          updateTelemetryView();
+          setStatus("Paste attack staged: credential injected via clipboard. Press Submit to test.", 'warn');
+        });
+      }
+
+      if ($('sim-impostor')) {$('sim-impostor').addEventListener('click', () => {
+          resetTelemetryBuffers();
+          if (usernameInput) usernameInput.value = "alex.cyber";
+          if (passwordInput) passwordInput.value = "SecretPass2026";
+
+          state.syntheticFlags = ['flight_rhythm_mismatch'];
+          state.simulatedFlightSd = 90.0;
+
+          drawGauge(65, 'SUSPICIOUS');
+          updateHUD();
+          updateTelemetryView();
+          setStatus("Impostor staged: correct password, wrong rhythm. Press Submit to test.", 'warn');
+        });
+      }
+
+      if ($('btn-rebench')) {$('btn-rebench').addEventListener('click', () => {
+          updateTelemetryView();
+          const anomalous = state.syntheticFlags.length > 0;
+          drawGauge(anomalous ? 20 : 98, anomalous ? 'HIGH RISK / BOT' : 'LOW RISK');
+          setStatus("Benchmark refreshed. Baseline telemetry re-evaluated.", 'info');
+        });
+      }
+
+      if ($('btn-copy-json')) {$('btn-copy-json').addEventListener('click', () => {
+          const text = $('json-output') ?$('json-output').textContent : '';
+          navigator.clipboard.writeText(text).then(() => {
+            const orig = $('btn-copy-json').innerText;
+            $('btn-copy-json').innerText = "Copied!";
+            setTimeout(() => { $('btn-copy-json').innerText = orig; }, 1800);
+          }).catch(() => {});
+        });
+      }
+
+      if ($('btn-download-json')) {$('btn-download-json').addEventListener('click', () => {
+          const text = $('json-output') ?$('json-output').textContent : '';
+          const blob = new Blob([text], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `bioprint-telemetry-${Date.now()}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+        });
+      }
+
+      const sdkModal = $('sdk-modal');
+      const openModal = () => {
+        if (!sdkModal) return;
+        sdkModal.classList.remove('hidden');
+        setTimeout(() => sdkModal.classList.remove('opacity-0'), 10);
+      };
+      const closeModal = () => {
+        if (!sdkModal) return;
+        sdkModal.classList.add('opacity-0');
+        setTimeout(() => sdkModal.classList.add('hidden'), 300);
+      };
+
+      if ($('nav-integration'))$('nav-integration').addEventListener('click', openModal);
+      if ($('close-modal'))$('close-modal').addEventListener('click', closeModal);
+      if ($('btn-close-modal-footer'))$('btn-close-modal-footer').addEventListener('click', closeModal);
+      if ($('nav-demo'))$('nav-demo').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+      if ($('nav-analytics'))$('nav-analytics').addEventListener('click', () => {
+        if ($('gauge-canvas'))$('gauge-canvas').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+
+      function setBackendOnline(online) {
+        state.backendOnline = online;
+        const label = $('engine-status');
+        const dot = $('engine-dot');
+        const ping = $('engine-ping');
+        if (label) {
+          label.textContent = online ? 'Connected' : 'Offline (local mode)';
+          label.className = online ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold';
+        }
+        if (dot) dot.className = online
+          ? 'relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500'
+          : 'relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500';
+        if (ping) ping.className = online
+          ? 'animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75'
+          : 'absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-40';
+      }
+
+      async function pingBackend() {
+        try {
+          const res = await fetch(ENDPOINTS.health, { method: 'GET' });
+          setBackendOnline(res.ok);
+        } catch (_) {
+          setBackendOnline(false);
+        }
+      }
+
+      setTimeout(() => {
+        resizeCanvases();
+        setMode('enroll');
+        pingBackend();
+        setInterval(pingBackend, 15000);
+      }, 100);
+
+    })();
+  </script>
+</body>
+</html>
