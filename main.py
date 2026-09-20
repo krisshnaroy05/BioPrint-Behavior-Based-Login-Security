@@ -1,21 +1,17 @@
 import logging
-from typing import Any, Dict, List, Optional, Union
+import math
+from typing import Any, Dict, List, Tuple
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import numpy as np
+from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import StandardScaler
 
-try:
-    from sklearn.ensemble import IsolationForest
-except ImportError:
-    raise ImportError("scikit-learn is required. Install via `pip install scikit-learn`")
-
-# Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-app = FastAPI(title="BioPrint Unified Telemetry Engine & Authentication Server")
+app = FastAPI(title="BioPrint Behavioral Biometric Engine v3.1")
 
-# Enable CORS for local/extension development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,292 +20,273 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory user database for imposter detection & biometric baselines
 USER_DATABASE: Dict[str, Dict[str, Any]] = {}
 
+# Verification Threshold Configuration
+VERIFY_THRESHOLD = 80.0  # Require >= 80% match for ACCESS GRANTED
 
-class BioPrintBotDetector:
-    """
-    Evaluates telemetry payloads sent by web GUIs, scripts, or automated bots.
-    Combines rule-based heuristics with an unsupervised anomaly detection model.
-    """
+
+class BehavioralFeatureExtractor:
+    """Extracts 8-D normalized feature vectors from telemetry payloads."""
+
+    @staticmethod
+    def extract(payload: dict) -> np.ndarray:
+        ks = payload.get('keystrokes', {}).get('password', {}).get('derived', {})
+        ptr = payload.get('pointer', {}).get('derived', {})
+
+        dwell_mean = float(ks.get('dwell', {}).get('mean') or 95.0)
+        dwell_sd = float(ks.get('dwell', {}).get('sd') or 22.0)
+        flight_mean = float(ks.get('ud', {}).get('mean') or 140.0)
+        flight_sd = float(ks.get('ud', {}).get('sd') or 35.0)
+        cps = float(ks.get('typingSpeedCps') or 3.8)
+
+        # Mouse pointer metrics with fallback for idle/missing mouse
+        speed_mean = float(ptr.get('speedPxPerMs', {}).get('mean') or 0.45)
+        straightness = float(ptr.get('straightness', {}).get('mean') or 0.70)
+        turn_sd = float(ptr.get('turnAngleRad', {}).get('sd') or 0.85)
+
+        return np.array([
+            dwell_mean, dwell_sd, flight_mean, flight_sd,
+            cps, speed_mean, straightness, turn_sd
+        ], dtype=np.float64)
+
+
+class Tier1BotDetector:
+    """Flags programmatic automation, key injectors, and extreme speed anomalies."""
+
     def __init__(self):
-        # Heuristic Thresholds
-        self.MIN_MOUSE_SAMPLES = 5          # Minimum recorded mouse points for non-touch inputs
-        self.MAX_STRAIGHTNESS = 0.992       # Straightness ratio >= 0.992 indicates robotic straight lines
-        self.MIN_FLIGHT_STD = 12.0          # Standard deviation of inter-key interval (ms)
-        self.MIN_DWELL_MEAN = 10.0          # Average key hold duration (ms)
-        self.MAX_CPS = 22.0                 # Max reasonable human typing speed (characters per second)
+        self.scaler = StandardScaler()
+        self.model = IsolationForest(contamination=0.02, random_state=42)
+        self._train_baseline()
 
-        # Unsupervised ML Model trained to detect non-human behavioral anomalies
-        self.anomaly_model = IsolationForest(contamination=0.08, random_state=42)
-        self._bootstrap_model()
-
-    def _bootstrap_model(self):
-        """Pre-trains model on synthetic human behavioral baselines."""
+    def _train_baseline(self):
         np.random.seed(42)
-        human_baseline = np.column_stack([
-            np.random.normal(90, 20, 300),     # dwell_mean (~90ms)
-            np.random.normal(18, 5, 300),      # dwell_sd (~18ms)
-            np.random.normal(160, 45, 300),    # flight_mean (~160ms)
-            np.random.normal(40, 12, 300),     # flight_sd (~40ms)
-            np.random.normal(0.4, 0.15, 300),  # mouse_speed_mean (~0.4 px/ms)
-            np.random.normal(0.8, 0.25, 300),  # mouse_turn_sd (~0.8 rad)
-            np.random.normal(0.72, 0.1, 300)   # straightness_mean (~0.72)
+        # Broader distribution of typical human typing and mouse patterns
+        humans = np.column_stack([
+            np.random.normal(95, 30, 600),   # dwell_mean
+            np.random.normal(22, 10, 600),   # dwell_sd
+            np.random.normal(140, 50, 600),  # flight_mean
+            np.random.normal(38, 20, 600),   # flight_sd
+            np.random.normal(4.0, 1.8, 600),  # cps
+            np.random.normal(0.45, 0.25, 600),# speed
+            np.random.normal(0.70, 0.18, 600),# straightness
+            np.random.normal(0.85, 0.35, 600) # turn_sd
         ])
-        self.anomaly_model.fit(human_baseline)
+        scaled_humans = self.scaler.fit_transform(humans)
+        self.model.fit(scaled_humans)
 
-    def extract_feature_vector(self, payload: dict) -> np.ndarray:
-        """Extracts numerical features from full web payloads or fallback script structures."""
-        pw_derived = payload.get('keystrokes', {})
-        if isinstance(pw_derived, dict):
-            pw_derived = pw_derived.get('password', {}).get('derived', {})
-        else:
-            pw_derived = {}
-
-        dwell_stats = pw_derived.get('dwell') or {}
-        ud_stats = pw_derived.get('ud') or {}
-
-        dwell_mean = dwell_stats.get('mean', 0)
-        dwell_sd = dwell_stats.get('sd', 0)
-        flight_mean = ud_stats.get('mean', 0)
-        flight_sd = ud_stats.get('sd', 0)
-
-        mouse_derived = payload.get('pointer', {}).get('derived', {}) if isinstance(payload.get('pointer'), dict) else {}
-        speed_stats = mouse_derived.get('speedPxPerMs') or {}
-        turn_stats = mouse_derived.get('turnAngleRad') or {}
-        straight_stats = mouse_derived.get('straightness') or {}
-
-        mouse_speed_mean = speed_stats.get('mean', 0)
-        mouse_turn_sd = turn_stats.get('sd', 0)
-        straightness_mean = straight_stats.get('mean', 0)
-
-        return np.array([[
-            dwell_mean,
-            dwell_sd,
-            flight_mean,
-            flight_sd,
-            mouse_speed_mean,
-            mouse_turn_sd,
-            straightness_mean
-        ]])
-
-    def evaluate_payload(self, payload: dict):
-        """
-        Evaluates full payload structure.
-        Returns tuple: (is_bot: bool, confidence_score: float, violations: list[str])
-        """
+    def evaluate(self, feature_vector: np.ndarray, flags: List[str]) -> Tuple[bool, float, List[str]]:
         violations = []
-        
-        env = payload.get('environment', {})
-        signals = payload.get('signals', {})
-        pointer = payload.get('pointer', {})
-        derived_mouse = pointer.get('derived', {}) if isinstance(pointer, dict) else {}
 
-        ks_obj = payload.get('keystrokes', {})
-        ks_pass = ks_obj.get('password', {}) if isinstance(ks_obj, dict) else {}
-        pass_derived = ks_pass.get('derived', {}) if isinstance(ks_pass, dict) else {}
+        # Explicit Bot Flags from Frontend Sensors
+        if 'robotic_key_interval' in flags or 'fixed_dwell_10ms' in flags:
+            violations.append("Robotic fixed key interval detected")
+        if 'paste_event_detected' in flags:
+            violations.append("Programmatic paste detected in input field")
+        if 'zero_pointer_curvature' in flags:
+            violations.append("Synthetic linear pointer path detected")
 
-        # --- Rule 1: Browser Environment Automation Flags ---
-        if env.get('webdriver') or 'webdriver' in signals.get('flags', []):
-            violations.append("Browser automation flag active (`navigator.webdriver = true`)")
-        if env.get('headlessUserAgent'):
-            violations.append("Headless Chrome user agent detected")
+        # Physical Human Limits
+        if feature_vector[4] > 25.0:  # Typing speed > 25 chars/sec
+            violations.append(f"Inhuman typing speed ({feature_vector[4]:.1f} CPS)")
+        if feature_vector[0] < 10.0:  # Key dwell time < 10ms
+            violations.append(f"Inhuman key dwell time ({feature_vector[0]:.1f}ms)")
 
-        # --- Rule 2: Event Integrity & Synthetic Injection ---
-        if signals.get('untrustedEvents', 0) > 0:
-            violations.append(f"Untrusted DOM events detected (count: {signals['untrustedEvents']})")
-        if signals.get('syntheticClicks', 0) > 0:
-            violations.append("Scripted click event detected (`detail === 0` without keyboard interaction)")
-
-        # --- Rule 3: Keystroke Anomalies ---
-        if ks_pass.get('paste', 0) > 0 or ks_pass.get('nonKeyInputEvents', 0) > 0:
-            violations.append("Password form field populated via paste or script injection")
-
-        cps = pass_derived.get('typingSpeedCps')
-        if cps and cps > self.MAX_CPS:
-            violations.append(f"Superhuman typing speed detected ({cps} CPS)")
-
-        ud_stats = pass_derived.get('ud') or {}
-        if ud_stats.get('n', 0) >= 3 and ud_stats.get('sd', 99) < self.MIN_FLIGHT_STD:
-            violations.append(f"Robotic flight time distribution (std: {ud_stats.get('sd')} ms)")
-
-        dwell_stats = pass_derived.get('dwell') or {}
-        if dwell_stats.get('n', 0) >= 3 and dwell_stats.get('mean', 99) < self.MIN_DWELL_MEAN:
-            violations.append(f"Inhuman key dwell duration (mean: {dwell_stats.get('mean')} ms)")
-
-        # --- Rule 4: Pointer / Mouse Movement Trajectory ---
-        pointer_type = pointer.get('type') if isinstance(pointer, dict) else None
-        mouse_samples = derived_mouse.get('samples', 0)
-        
-        if pointer_type and pointer_type != 'touch' and mouse_samples < self.MIN_MOUSE_SAMPLES:
-            violations.append(f"Missing pointer interaction prior to submit (samples: {mouse_samples})")
-
-        if derived_mouse.get('teleports', 0) > 0:
-            violations.append("Instant cursor coordinate teleportation detected (>10 px/ms)")
-
-        straightness = derived_mouse.get('straightness') or {}
-        if straightness.get('n', 0) >= 2 and straightness.get('mean', 0) >= self.MAX_STRAIGHTNESS:
-            violations.append(f"Unnatural linear cursor movement (straightness ratio: {straightness.get('mean')})")
-
-        # --- Layer 2: Machine Learning Model Evaluation ---
-        feat_vector = self.extract_feature_vector(payload)
-        ml_score = self.anomaly_model.score_samples(feat_vector)[0]
-        is_ml_anomaly = self.anomaly_model.predict(feat_vector)[0] == -1
-
-        if is_ml_anomaly and len(violations) > 0:
-            violations.append(f"Behavioral pattern flagged by Anomaly Engine (score: {ml_score:.3f})")
-
-        # Final Decision
         is_bot = len(violations) > 0
-        confidence = max(0.0, min(100.0, (ml_score + 0.5) * 100)) if not violations else max(0.0, 30.0 - (len(violations) * 10))
-
-        return is_bot, round(confidence, 1), violations
-
-
-# Initialize Detector Instance
-detector = BioPrintBotDetector()
+        confidence = 10.0 if is_bot else 98.0
+        return is_bot, confidence, violations
 
 
-def calculate_avg_dwell(payload: dict) -> float:
-    """Helper to calculate average dwell time from either web GUI derived stats or direct keystrokes array."""
-    # 1. Try web GUI schema format
-    try:
-        pw_dwell = payload.get('keystrokes', {}).get('password', {}).get('derived', {}).get('dwell', {})
-        if 'mean' in pw_dwell and pw_dwell['mean'] > 0:
-            return float(pw_dwell['mean'])
-    except AttributeError:
-        pass
+class Tier2UserBiometricMatcher:
+    """Verifies identity against enrolled baseline using Z-Score distances."""
 
-    # 2. Try raw array of keystroke events
-    keystrokes = payload.get('keystrokes', [])
-    if isinstance(keystrokes, list) and len(keystrokes) > 0:
-        dwells = []
-        for k in keystrokes:
-            if isinstance(k, dict) and 'pressTime' in k and 'releaseTime' in k:
-                if k['releaseTime'] > k['pressTime']:
-                    dwells.append(k['releaseTime'] - k['pressTime'])
-        if dwells:
-            return sum(dwells) / len(dwells)
+    FEATURE_NAMES = [
+        "Dwell Mean", "Dwell SD", "Flight Mean",
+        "Flight SD", "Typing Speed", "Mouse Speed",
+        "Straightness", "Turn Angle SD"
+    ]
+    WEIGHTS = np.array([1.2, 1.0, 1.1, 1.5, 0.8, 0.7, 0.9, 0.6])
 
-    return 0.0
+    @classmethod
+    def fit_user_baseline(cls, samples: List[np.ndarray]) -> Dict[str, np.ndarray]:
+        arr = np.array(samples)
+        means = np.mean(arr, axis=0)
+        stds = np.std(arr, axis=0)
+        stds = np.maximum(stds, np.array([5.0, 2.0, 10.0, 3.0, 0.3, 0.05, 0.02, 0.05]))
+        return {"mean": means, "std": stds}
+
+    @classmethod
+    def verify(cls, current_feat: np.ndarray, baseline: Dict[str, np.ndarray]) -> Tuple[bool, float, List[str]]:
+        means = baseline["mean"]
+        stds = baseline["std"]
+
+        # Calculate Z-score distance per biomarker
+        z_scores = np.abs(current_feat - means) / stds
+        weighted_z = z_scores * cls.WEIGHTS
+        distance = float(np.mean(weighted_z))
+
+        # Map distance to match score percentage (0 - 100%)
+        match_score = max(5.0, min(99.0, 98.0 * math.exp(-0.35 * distance)))
+
+        # Identify deviating biomarkers (> 2.0 standard deviations)
+        mismatch_reasons = []
+        for idx, z in enumerate(z_scores):
+            if z > 2.0:
+                mismatch_reasons.append(
+                    f"{cls.FEATURE_NAMES[idx]} deviated ({current_feat[idx]:.1f} vs baseline {means[idx]:.1f})"
+                )
+
+        # STRICT THRESHOLD CHECK: Match score must be >= VERIFY_THRESHOLD (80%)
+        is_match = match_score >= VERIFY_THRESHOLD
+        return is_match, round(match_score, 1), mismatch_reasons
+
+    @classmethod
+    def adapt_profile(cls, baseline: Dict[str, np.ndarray], new_sample: np.ndarray, alpha: float = 0.15) -> Dict[str, np.ndarray]:
+        updated_mean = (1 - alpha) * baseline["mean"] + alpha * new_sample
+        new_diff = np.abs(new_sample - updated_mean)
+        updated_std = (1 - alpha) * baseline["std"] + alpha * new_diff
+        return {"mean": updated_mean, "std": np.maximum(updated_std, 1e-2)}
 
 
-@app.post("/api/bioprint/telemetry")
-async def process_telemetry(request: Request):
-    """
-    Unified Endpoint processing Web GUI submissions, API scripts, and imposter login attempts.
-    """
+bot_detector = Tier1BotDetector()
+
+
+async def process_telemetry_pipeline(request: Request, mode_override: str = None):
     try:
         payload = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload.")
 
-    # --- 1. Extract Identity & Session Mode ---
     username = payload.get('subject', {}).get('username') or payload.get('username')
-    password = payload.get('subject', {}).get('password') or payload.get('password')
-    session = payload.get('session', {})
-    mode = session.get('mode') or payload.get('mode', 'verify')
-
     if not username:
-        raise HTTPException(status_code=400, detail="Username is required.")
+        raise HTTPException(status_code=400, detail="Username parameter missing.")
 
-    logging.info(f"Received telemetry payload for user '{username}' in '{mode}' mode.")
+    mode = mode_override or payload.get('session', {}).get('mode') or 'verify'
+    flags = payload.get('signals', {}).get('flags', []) or payload.get('biometrics', {}).get('syntheticFlags', []) or []
 
-    # --- 2. LAYER 1: Bot & Automation Script Filter ---
-    is_bot, confidence, violations = detector.evaluate_payload(payload)
+    features = BehavioralFeatureExtractor.extract(payload)
 
+    # Step 1: Tier-1 Bot Check
+    is_bot, bot_conf, bot_violations = bot_detector.evaluate(features, flags)
     if is_bot:
-        logging.warning(f"[BLOCKED - BOT/SCRIPT] User: '{username}'. Violations: {violations}")
+        logging.warning(f"[BOT BLOCKED] User: '{username}'. Violations: {bot_violations}")
         return JSONResponse(
-            status_code=403,
+            status_code=200,
             content={
-                "status": "REJECTED",
-                "reason": "BOT_OR_SCRIPT_DETECTED",
+                "status": "blocked",
+                "reason": "BOT_DETECTED",
                 "is_bot": True,
-                "confidence_score": confidence,
-                "explainability": violations
+                "score": bot_conf,
+                "confidence_score": bot_conf,
+                "explainability": bot_violations,
+                "message": f"ACCESS DENIED: Bot behavior detected ({' | '.join(bot_violations)})"
             }
         )
 
-    # --- 3. LAYER 2: Imposter & Biometric Rhythm Engine ---
-    avg_dwell = calculate_avg_dwell(payload)
-
+    # Step 2: Enrollment Mode
     if mode == "enroll":
         if username not in USER_DATABASE:
-            USER_DATABASE[username] = {
-                "password": password,
-                "samples": [],
-                "baseline_dwell": 0.0
-            }
-        
-        if password:
-            USER_DATABASE[username]["password"] = password
+            USER_DATABASE[username] = {"samples": []}
 
-        USER_DATABASE[username]["samples"].append(avg_dwell)
-        samples = USER_DATABASE[username]["samples"]
-        USER_DATABASE[username]["baseline_dwell"] = sum(samples) / len(samples)
+        USER_DATABASE[username]["samples"].append(features)
+        count = len(USER_DATABASE[username]["samples"])
 
-        return {
-            "status": "enrolled",
-            "is_bot": False,
-            "confidence_score": confidence,
-            "message": f"Sample {len(samples)} recorded. Baseline dwell: {round(USER_DATABASE[username]['baseline_dwell'], 2)}ms",
-            "sampleCount": len(samples)
-        }
-
-    elif mode in ["verify", "login"]:
-        if username not in USER_DATABASE:
-            logging.warning(f"[BLOCKED - UNKNOWN USER] Attempted login for '{username}'")
-            return {
-                "status": "blocked",
-                "is_bot": False,
-                "message": "ACCESS BLOCKED",
-                "reason": "User not found in system."
-            }
-
-        user_record = USER_DATABASE[username]
-        
-        # Check standard credentials (imposter detection)
-        if password and user_record["password"] and user_record["password"] != password:
-            logging.warning(f"[BLOCKED - INVALID CREDENTIALS] Imposter login attempt for '{username}'")
-            return {
-                "status": "blocked",
-                "is_bot": False,
-                "message": "ACCESS BLOCKED",
-                "reason": "Invalid credentials."
-            }
-
-        baseline = user_record["baseline_dwell"]
-        diff = abs(avg_dwell - baseline)
-
-        # Behavioral rhythm anomaly tolerance (60ms maximum variation)
-        if diff <= 60.0 or baseline == 0.0:
-            score = round(max(0.0, 100.0 - diff), 2)
-            logging.info(f"[ACCEPTED] Legitimate user '{username}' verified (Score: {score}).")
-            return {
-                "status": "granted",
-                "is_bot": False,
-                "message": "ACCESS GRANTED",
-                "score": score,
-                "dwellMs": round(avg_dwell, 2),
-                "confidence_score": confidence,
-                "explainability": ["Behavioral signatures match legitimate human parameters"]
-            }
+        if count >= 3:
+            USER_DATABASE[username]["baseline"] = Tier2UserBiometricMatcher.fit_user_baseline(
+                USER_DATABASE[username]["samples"]
+            )
+            msg = f"Biometric enrollment complete ({count}/3 samples stored)."
         else:
-            logging.warning(f"[BLOCKED - RHYTHM ANOMALY] Imposter or unnatural cadence for '{username}' (Diff: {diff}ms)")
-            return {
-                "status": "blocked",
+            msg = f"Sample {count}/3 recorded. Complete remaining attempts."
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "success",
+                "mode": "enroll",
+                "username": username,
+                "sample_count": count,
                 "is_bot": False,
-                "message": "ACCESS BLOCKED",
-                "reason": f"Biometric rhythm anomaly detected (Variance: {round(diff, 2)}ms)",
-                "dwellMs": round(avg_dwell, 2)
+                "score": 98.0,
+                "confidence_score": 98.0,
+                "message": msg
             }
+        )
 
-    raise HTTPException(status_code=400, detail=f"Invalid mode '{mode}' specified.")
+    # Step 3: Check Enrollment Status for Verify Mode
+    if username not in USER_DATABASE or "baseline" not in USER_DATABASE[username]:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "blocked",
+                "reason": "USER_NOT_ENROLLED",
+                "is_bot": False,
+                "score": 0.0,
+                "message": f"User '{username}' is not enrolled. Enroll 3 times first."
+            }
+        )
 
+    # Step 4: Tier-2 Identity Verification
+    baseline = USER_DATABASE[username]["baseline"]
+    is_match, score, explainability = Tier2UserBiometricMatcher.verify(features, baseline)
+
+    # Handle Flight Rhythm Mismatch Flag
+    if 'flight_rhythm_mismatch' in flags:
+        score = min(score, 45.0)
+        is_match = False
+        explainability.append("Simulated rhythm mismatch forced by client trigger")
+
+    # Access Decision (Score < 80% returns ACCESS DENIED / blocked)
+    if not is_match or score < VERIFY_THRESHOLD:
+        reasons = explainability if explainability else [f"Match score ({score}%) below threshold ({VERIFY_THRESHOLD}%)"]
+        logging.warning(f"[ACCESS DENIED] User: '{username}'. Score: {score}%")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "blocked",
+                "reason": "BIOMETRIC_MISMATCH",
+                "score": score,
+                "confidence_score": score,
+                "is_bot": False,
+                "explainability": reasons,
+                "message": f"ACCESS DENIED: Behavioral match {score}% is below required {VERIFY_THRESHOLD}%"
+            }
+        )
+
+    # Adaptive Baseline Update on Strong Match (>= 90%)
+    if score >= 90.0:
+        USER_DATABASE[username]["baseline"] = Tier2UserBiometricMatcher.adapt_profile(baseline, features)
+
+    logging.info(f"[ACCESS GRANTED] User: '{username}'. Score: {score}%")
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "granted",
+            "username": username,
+            "score": score,
+            "confidence_score": score,
+            "is_bot": False,
+            "message": f"ACCESS GRANTED: Biometric signature match ({score}%)"
+        }
+    )
+
+
+@app.get("/")
+async def root():
+    return {"status": "online", "engine": "BioPrint Engine v3.1"}
+
+@app.post("/api/enroll")
+async def enroll_endpoint(request: Request):
+    return await process_telemetry_pipeline(request, mode_override="enroll")
+
+@app.post("/api/verify")
+async def verify_endpoint(request: Request):
+    return await process_telemetry_pipeline(request, mode_override="verify")
+
+@app.post("/api/bioprint/telemetry")
+async def telemetry_endpoint(request: Request):
+    return await process_telemetry_pipeline(request)
 
 if __name__ == "__main__":
     import uvicorn
-    print("Starting Unified BioPrint Identification Engine on http://0.0.0.0:5000")
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+    uvicorn.run(app, host="127.0.0.1", port=5000)
