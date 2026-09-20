@@ -209,7 +209,20 @@
                 <label for="password" class="font-semibold text-slate-300">Secret Password</label>
                 <span id="badge-pass-dynamics" class="text-[11px] font-mono text-cyber-400 bg-cyber-500/10 px-2 py-0.5 rounded border border-cyber-500/20">Masked Dynamics</span>
               </div>
-              <input id="password" name="password" type="password" autocomplete="new-password" placeholder="••••••••••••" class="input-glow w-full h-14 px-4 bg-dark-bg/80 border border-dark-border/80 rounded-xl text-white placeholder-slate-600 focus:outline-none font-mono text-xl tracking-[0.25em]">
+              <div class="relative flex items-center">
+                <input id="password" name="password" type="password" autocomplete="new-password" placeholder="••••••••••••" class="input-glow w-full h-14 pl-4 pr-12 bg-dark-bg/80 border border-dark-border/80 rounded-xl text-white placeholder-slate-600 focus:outline-none font-mono text-xl tracking-[0.25em]">
+                <button type="button" id="toggle-password" aria-label="Toggle password visibility" class="absolute right-3.5 p-1.5 text-slate-400 hover:text-white focus:text-white focus:outline-none transition-colors rounded-lg">
+                  <!-- Eye Icon (Show Password) -->
+                  <svg id="eye-icon-show" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  <!-- Eye Off Icon (Hide Password) -->
+                  <svg id="eye-icon-hide" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858-5.908a10.038 10.038 0 013.122-.363c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21M3 3l18 18" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             <div id="enroll-progress" class="pt-2">
@@ -1296,6 +1309,22 @@ POST /api/bioprint/telemetry    → mode taken from session.mode</pre>
       }, 100);
 
     })();
+
+    const togglePasswordBtn = $('toggle-password');
+    const eyeIconShow       = $('eye-icon-show');
+    const eyeIconHide       = $('eye-icon-hide');
+
+    if (togglePasswordBtn && passwordInput) {
+      togglePasswordBtn.addEventListener('click', () => {
+        const isPassword = passwordInput.type === 'password';
+        passwordInput.type = isPassword ? 'text' : 'password';
+        
+        if (eyeIconShow && eyeIconHide) {
+          eyeIconShow.classList.toggle('hidden', isPassword);
+          eyeIconHide.classList.toggle('hidden', !isPassword);
+        }
+      });
+    }
   </script>
 </body>
 </html>
